@@ -283,6 +283,32 @@
     [data-theme="dark"] .api-link { color: #60a5fa; }
     [data-theme="dark"] .api-link:hover { color: #93c5fd; }
     .warning-text { color: var(--danger-text); font-size: 0.85rem; font-weight: bold; background: var(--danger-bg); padding: 10px; border-radius: 6px; border: 1px solid rgba(239,68,68,0.3); }
+
+    /* --- 本番形式 模擬試験 --- */
+    .option-btn.selected { background-color: var(--info-bg); border-color: var(--primary); color: var(--primary); font-weight: bold; }
+    .mock-bar { position: sticky; top: 0; z-index: 10; background: var(--trend-bg); color: var(--trend-text); padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-weight: bold; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; backdrop-filter: blur(6px); }
+    .mock-bar .mock-timer { font-variant-numeric: tabular-nums; font-size: 1.1rem; }
+    .mock-bar .mock-timer.warn { color: var(--danger-text); }
+    .mock-bar .mock-blocks { font-size: 0.8rem; font-weight: normal; width: 100%; }
+    .mock-bar .mock-submit { margin-left: auto; width: auto; padding: 6px 14px; font-size: 0.85rem; background: var(--danger-btn); }
+    .mock-nav-group { width: 100%; font-size: 0.75rem; color: var(--text-muted); font-weight: bold; margin-top: 4px; }
+    .mock-nav-btn { width: 32px; height: 32px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; font-weight: bold; color: var(--text); }
+    .mock-nav-btn.answered { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .mock-nav-btn.current { outline: 2px solid var(--trend-text); outline-offset: 1px; }
+    .mock-nav-btn.locked { opacity: 0.35; cursor: default; }
+    .mock-controls { display: none; gap: 8px; margin-top: 16px; }
+    .mock-controls .nav-btn { flex: 1; padding: 10px; font-size: 0.9rem; }
+    .mock-setup-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; line-height: 1.6; }
+    .mock-setup-card h3 { margin: 0 0 8px; font-size: 1rem; color: var(--primary); }
+    .mock-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 8px; }
+    .mock-table th, .mock-table td { border-bottom: 1px solid var(--border); padding: 6px 4px; text-align: center; }
+    .mock-table th:first-child, .mock-table td:first-child { text-align: left; }
+    .mock-analysis { text-align: left; }
+    .mock-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+    .mock-compare > div { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; }
+    .mock-compare .big { font-size: 1.4rem; font-weight: bold; color: var(--primary); }
+    .hi-tag { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; margin-left: 6px; background: var(--border); color: var(--text); font-weight: normal; }
+    .hi-tag.sel { background: var(--info-bg); color: var(--primary); }
   </style>
 </head>
 <body>
@@ -324,14 +350,14 @@
     </div>
 
     <div class="help-section">
-      <h3>2. AI機能について（予想問題・腕試し）</h3>
+      <h3>2. AI機能・腕試しモードについて</h3>
       <p>このアプリの最大の特徴は、Googleの生成AI（Gemini）を活用して<b>「過去問と似た傾向の新しいオリジナル予想問題」</b>を作成できる点です。また、問題の解説をさらに詳しくAIに質問することもできます。</p>
       <ul>
         <li><b>AI予想問題 網羅特訓:</b> 選択したジャンルの過去問を分析し、新しい5択問題を自動生成します。</li>
-        <li><b>腕試しモード:</b> 本番試験と同じ配分で「35問中から25問を選んで解答する」模擬試験を受けられます。（約8割がAIによる新規作成問題、残りが過去問で構成されます）</li>
+        <li><b>腕試しモード:</b> 本番と同じく「35問中から25問を選んで解答」し、制限時間付きで受ける模擬試験です。50%以上（13問以上）正解で合格ライン。出題は過去問ミックス・年度指定（APIキー不要）か、AI予想問題から選べます。試験後に「選ばなかった問題」も解くと、選び方が最適だったか（何点取れていたか）を確認できます。</li>
       </ul>
       <div class="warning-text" style="margin-top: 12px;">
-        ※AI機能（詳細解説・予想問題・腕試しモード）を利用するには、ご自身で「APIキー」を取得してアプリに設定する必要があります（無料）。詳しくは下記の手順をご覧ください。
+        ※AI機能（詳細解説・予想問題・腕試しモードのAI出題）を利用するには、ご自身で「APIキー」を取得してアプリに設定する必要があります（無料）。詳しくは下記の手順をご覧ください。
       </div>
     </div>
 
@@ -459,8 +485,8 @@
     
     <button id="start-btn" class="nav-btn" onclick="startQuiz()">過去問演習を開始する</button>
     <button id="start-ai-btn" class="nav-btn" onclick="startAIQuiz()">✨ AI予想問題 網羅特訓モード (5問ずつ生成)</button>
-    <button id="start-mock-btn" class="nav-btn" onclick="startMockExam()" style="background: linear-gradient(135deg, #f59e0b, #ea580c); margin-top: 16px;">
-      🏆 腕試しモード (本番形式: 35問中25問選択)
+    <button id="start-mock-btn" class="nav-btn" onclick="openMockSetup()" style="background: linear-gradient(135deg, #f59e0b, #ea580c); margin-top: 16px;">
+      🏆 腕試しモード (本番形式: 35問中25問選択・時間制限)
     </button>
     <button class="nav-btn secondary" onclick="openMockHistory()" style="margin-top: 12px;">
       📊 過去の腕試し結果を見る
@@ -492,8 +518,11 @@
   </div>
 
   <div id="screen-quiz" class="screen">
-    <div id="mock-status-bar" style="display: none; background: var(--trend-bg); color: var(--trend-text); padding: 12px; border-radius: 8px; font-weight: bold; text-align: center; margin-bottom: 16px;">
-      選択・解答済み: <span id="mock-answered-count">0</span> / 25 問
+    <div id="mock-status-bar" class="mock-bar" style="display: none;">
+      <span id="mock-timer" class="mock-timer">⏱ --:--</span>
+      <span id="mock-count-label">選択: <span id="mock-answered-count">0</span> / 25 問</span>
+      <button id="mock-submit-btn" class="nav-btn mock-submit" onclick="submitMockExam()">提出して採点</button>
+      <div id="mock-blocks" class="mock-blocks"></div>
     </div>
 
     <div id="mock-nav" style="display: none; flex-wrap: wrap; gap: 6px; margin-bottom: 16px;">
@@ -552,6 +581,12 @@
       </div>
     </div>
 
+    <div id="mock-controls" class="mock-controls">
+      <button class="nav-btn secondary" onclick="mockMove(-1)">◀ 前へ</button>
+      <button class="nav-btn secondary" id="mock-clear-btn" onclick="clearMockAnswer()">選択取消</button>
+      <button class="nav-btn secondary" onclick="mockMove(1)">次へ ▶</button>
+    </div>
+
     <div class="controls">
       <button class="nav-btn secondary" id="quit-btn" onclick="quitQuiz()">中断</button>
       <button class="nav-btn" id="next-btn" disabled>回答を選択してください</button>
@@ -566,7 +601,9 @@
       <div class="score-number" id="score-text">0%</div>
       <div id="score-detail" style="font-weight: bold; color: var(--text-muted); font-size: 1.1rem;">0 / 0 問 正解</div>
     </div>
-    
+
+    <div id="mock-analysis" class="mock-analysis" style="display: none;"></div>
+
     <div class="history-filter">
       <label><input type="radio" name="res-filter" value="all" checked onchange="renderHistoryUI()"><span>すべて表示</span></label>
       <label><input type="radio" name="res-filter" value="wrong" onchange="renderHistoryUI()"><span>不正解・未回答</span></label>
@@ -577,6 +614,39 @@
     </div>
     
     <button id="result-back-btn" class="nav-btn" onclick="goToStart()" style="margin-top: 24px;">設定・成績画面に戻る</button>
+  </div>
+
+  <div id="screen-mock-setup" class="screen">
+    <h2>🏆 腕試しモード（本番形式）</h2>
+    <div class="mock-setup-card">
+      <h3>試験のルール</h3>
+      ・全35問から<b>25問を選んで</b>解答します（26問目は選べません）<br>
+      ・<b>50%以上（25問中13問以上）正解で合格</b>ライン<br>
+      ・試験中は正誤・解説は表示されません。解答は提出まで何度でも変更できます<br>
+      ・時間切れになると、その時点の解答で自動採点されます
+    </div>
+
+    <div class="filter-group">
+      <label for="mock-source">出題セット</label>
+      <select id="mock-source" class="filter-select"></select>
+    </div>
+    <div class="filter-group" style="margin-top: 12px;">
+      <label for="mock-time">制限時間</label>
+      <select id="mock-time" class="filter-select">
+        <option value="120" selected>120分（本番と同じ）</option>
+        <option value="90">90分</option>
+        <option value="60">60分</option>
+        <option value="0">制限なし</option>
+      </select>
+    </div>
+
+    <div class="mock-setup-card" style="margin-top: 16px;">
+      <h3>🎯 選択戦略のヒント（あなたの過去問成績より）</h3>
+      <div id="mock-strategy"></div>
+    </div>
+
+    <button class="nav-btn" onclick="startMockExam()" style="background: linear-gradient(135deg, #f59e0b, #ea580c);">試験を開始する</button>
+    <button class="nav-btn secondary" onclick="goToStart()" style="margin-top: 12px;">戻る</button>
   </div>
 
   <div id="screen-mock-history" class="screen">
@@ -617,6 +687,9 @@
   let isMockMode = false;
   let mockAnsweredCount = 0;
   const MAX_MOCK_SELECT = 25;
+  let mockState = null;      // 本番形式の試験状態（phase: exam → graded → extra → done）
+  let mockTimerId = null;
+  let mockLastTick = 0;
 
   let userMemory = {
     theme: 'light',
@@ -1200,6 +1273,7 @@
   }
 
   window.goToStart = function() {
+    stopMockTimer();
     window.isViewingPastMock = false;
     updateMemoryUI();
     updateFilterUI();
@@ -1211,27 +1285,193 @@
     return shuffleArray([...pool]).slice(0, count);
   }
 
-  // --- 腕試しモード（プログレスバー対応） ---
+  // --- 腕試しモード（本番形式 模擬試験） ---
+  const MOCK_PASS_COUNT = Math.ceil(MAX_MOCK_SELECT * 0.5); // 25問中13問（50%以上）で合格
+
+  function slotNumber(q) {
+    const m = String(q.qNum).match(/(\d+)\s*$/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  function formatDuration(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  function nowLabel() {
+    const now = new Date();
+    return `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  }
+
+  // 過去問の解答履歴から、大分類ごとの正答率と1回あたりの平均出題数を求める
+  function getGenreStrategyStats() {
+    const yearCount = Math.max(1, masterYears.length);
+    const stats = {};
+    masterGenres.forEach(g => stats[g] = { total: 0, correct: 0, perExam: 0 });
+    allQuestions.forEach(q => {
+      if (!stats[q.genre]) return;
+      stats[q.genre].perExam++;
+      const h = userMemory.history[q.id];
+      if (h) { stats[q.genre].total += h.c + h.w; stats[q.genre].correct += h.c; }
+    });
+    Object.values(stats).forEach(s => s.perExam = Math.round(s.perExam / yearCount));
+    return stats;
+  }
+
+  function renderMockStrategy() {
+    const stats = getGenreStrategyStats();
+    const rows = masterGenres.map(g => {
+      const s = stats[g];
+      return { g, perExam: s.perExam, rate: s.total > 0 ? s.correct / s.total : null, total: s.total };
+    });
+    const hasData = rows.some(r => r.rate !== null);
+
+    // 正答率の高い分野から順に、1回あたりの出題数まで割り当てて25問にする
+    let remain = MAX_MOCK_SELECT;
+    const plan = {};
+    [...rows].sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1)).forEach(r => {
+      plan[r.g] = Math.min(r.perExam, remain);
+      remain -= plan[r.g];
+    });
+
+    let html = `<table class="mock-table"><tr><th>大分類</th><th>出題数<br><span style="font-weight:normal">(平均)</span></th><th>あなたの<br>正答率</th>${hasData ? '<th>おすすめ<br>選択数</th>' : ''}</tr>`;
+    rows.forEach(r => {
+      const rateText = r.rate === null ? '<span style="color:var(--text-muted)">記録なし</span>' : `${Math.round(r.rate * 100)}%<br><span style="font-size:0.75rem;color:var(--text-muted)">(${r.total}回)</span>`;
+      html += `<tr><td>${r.g}</td><td>${r.perExam}問</td><td>${rateText}</td>${hasData ? `<td><b>${plan[r.g]}問</b></td>` : ''}</tr>`;
+    });
+    html += '</table>';
+    html += `<ul style="margin: 12px 0 0; padding-left: 20px; font-size: 0.85rem;">
+      ${hasData ? '<li>正答率の高い分野から多めに選び、苦手分野は確実に解ける問題だけに絞るのが基本です。</li>' : '<li>過去問演習の記録がまだないため、おすすめ配分は表示できません。演習を重ねると表示されます。</li>'}
+      <li>誤答による減点はないので、<b>25問は必ず全部選んで解答</b>しましょう。</li>
+      <li>最初に35問全体をざっと見て、計算問題や得意テーマなど「確実に取れる問題」から選ぶと効率的です。</li>
+    </ul>`;
+    document.getElementById('mock-strategy').innerHTML = html;
+  }
+
+  window.openMockSetup = function() {
+    const sel = document.getElementById('mock-source');
+    sel.innerHTML = '';
+    sel.add(new Option('過去問ミックス（問1〜35を各年度からランダムに抽出）', 'mix'));
+    masterYears.forEach(y => sel.add(new Option(`過去問 ${y}（本試験そのまま）`, `year:${y}`)));
+    sel.add(new Option('AI予想問題28問＋過去問7問（APIキー必要）', 'ai'));
+    renderMockStrategy();
+    switchScreen('screen-mock-setup');
+    window.scrollTo(0, 0);
+  };
+
   window.startMockExam = async function() {
-    const apiKey = localStorage.getItem('my_gemini_api_key');
-    if (!apiKey) {
-      alert("APIキーを保存してください。"); return;
+    const source = document.getElementById('mock-source').value;
+    const sourceLabel = document.getElementById('mock-source').selectedOptions[0].text;
+    const timeLimitSec = parseInt(document.getElementById('mock-time').value, 10) * 60;
+
+    if (userMemory.savedSession && !confirm("中断中のデータがあります。新しく試験を始めると破棄されます。よろしいですか？")) return;
+
+    let questions = [];
+    if (source === 'mix') {
+      for (let k = 1; k <= 35; k++) {
+        const cands = allQuestions.filter(q => slotNumber(q) === k);
+        if (cands.length) questions.push(cands[Math.floor(Math.random() * cands.length)]);
+      }
+    } else if (source.startsWith('year:')) {
+      const y = source.slice(5);
+      questions = allQuestions.filter(q => q.year === y).sort((a, b) => slotNumber(a) - slotNumber(b));
+    } else {
+      const apiKey = localStorage.getItem('my_gemini_api_key');
+      if (!apiKey) { alert("AI予想問題を使うには、スタート画面の設定エリアで Gemini APIキーを保存してください。"); return; }
+      try {
+        questions = await buildAIMockSet(apiKey);
+      } catch (error) {
+        console.error(error);
+        alert("問題生成に失敗しました: " + error.message);
+        goToStart();
+        return;
+      }
     }
 
+    if (questions.length === 0) { alert("出題できる問題がありません。"); return; }
+    beginMockExam(questions, { source, sourceLabel, timeLimitSec });
+  };
+
+  function beginMockExam(questions, settings) {
     window.isViewingPastMock = false;
     isMockMode = true;
-    isAiMode = true; 
+    isAiMode = settings.source === 'ai';
+    filteredQuestions = questions;
     sessionAnswers = {};
-    filteredQuestions = [];
     mockAnsweredCount = 0;
     curIdx = 0;
-    
+    mockState = {
+      phase: 'exam',
+      sourceLabel: settings.sourceLabel,
+      timeLimitSec: settings.timeLimitSec,
+      remainingSec: settings.timeLimitSec,
+      elapsedSec: 0,
+      extraAnswers: {},
+      recordId: null
+    };
+
+    document.getElementById('ai-loading').style.display = 'none';
+    document.getElementById('q-text').style.display = 'block';
+    document.getElementById('opt-box').style.display = 'flex';
+    switchScreen('screen-quiz');
+    initMockNav();
+    renderQuestion();
+    window.scrollTo(0, 0);
+    startMockTimer();
+    saveCurrentSession();
+  }
+
+  // --- タイマー（中断中・画面を離れている間は止まる） ---
+  function startMockTimer() {
+    stopMockTimer();
+    updateMockTimerLabel();
+    if (!mockState || mockState.phase !== 'exam') return;
+    mockLastTick = Date.now();
+    mockTimerId = setInterval(() => {
+      const now = Date.now();
+      const delta = (now - mockLastTick) / 1000;
+      mockLastTick = now;
+      if (!document.getElementById('screen-quiz').classList.contains('active')) return;
+      mockState.elapsedSec += delta;
+      if (mockState.timeLimitSec > 0) mockState.remainingSec -= delta;
+      updateMockTimerLabel();
+      if (Math.floor(mockState.elapsedSec) % 15 === 0) saveCurrentSession();
+      if (mockState.timeLimitSec > 0 && mockState.remainingSec <= 0) {
+        stopMockTimer();
+        alert("制限時間になりました。現在の解答で採点します。");
+        submitMockExam(true);
+      }
+    }, 1000);
+  }
+
+  function stopMockTimer() {
+    if (mockTimerId) { clearInterval(mockTimerId); mockTimerId = null; }
+  }
+
+  function updateMockTimerLabel() {
+    const el = document.getElementById('mock-timer');
+    if (!mockState) return;
+    el.classList.remove('warn');
+    if (mockState.phase === 'extra') {
+      el.textContent = '📝 選ばなかった問題';
+    } else if (mockState.timeLimitSec > 0) {
+      el.textContent = `⏱ 残り ${formatDuration(mockState.remainingSec)}`;
+      if (mockState.remainingSec < 600) el.classList.add('warn');
+    } else {
+      el.textContent = `⏱ 経過 ${formatDuration(mockState.elapsedSec)}`;
+    }
+  }
+
+  // AI予想問題28問＋過去問7問のセットを作る（建築→水質→廃棄物の順）
+  async function buildAIMockSet(apiKey) {
     switchScreen('screen-quiz');
     document.getElementById('q-text').style.display = 'none';
     document.getElementById('opt-box').style.display = 'none';
     document.getElementById('q-image-container').style.display = 'none';
     document.getElementById('mock-status-bar').style.display = 'none';
     document.getElementById('mock-nav').style.display = 'none';
+    document.getElementById('mock-controls').style.display = 'none';
     
     // ローディングとプログレスバーの表示
     document.getElementById('ai-loading').style.display = 'block';
@@ -1319,23 +1559,11 @@
       const haikibutsuAll = shuffleArray([...haikibutsuAI_1, ...haikibutsuAI_2, ...haikibutsuPast]);
 
       // 問題を結合 (本番通り建築→水質→廃棄物の順)
-      filteredQuestions = [...kenchikuAll, ...suishitsuAll, ...haikibutsuAll];
-
+      return [...kenchikuAll, ...suishitsuAll, ...haikibutsuAll];
+    } finally {
       document.getElementById('ai-loading').style.display = 'none';
-      document.getElementById('q-text').style.display = 'block';
-      document.getElementById('opt-box').style.display = 'flex';
-      
-      initMockNav(); 
-      renderQuestion();
-
-      clearSavedSession();
-
-    } catch (error) {
-      console.error(error);
-      alert("問題生成に失敗しました: " + error.message);
-      goToStart();
     }
-  };
+  }
 
   async function fetchMockAIBatch(genre, count, apiKey, useLiteModel = false, previousQuestionsText = "", onRetry = null) {
     const modelName = useLiteModel ? 'gemini-3.5-flash-lite' : 'gemini-3.5-flash';
@@ -1396,49 +1624,305 @@
     }
   }
 
+  // 試験中の「答えを書き込む先」：本試験は選択した25問、試験後の追加演習は選ばなかった問題
+  function mockAnswerMap() {
+    return mockState.phase === 'extra' ? mockState.extraAnswers : sessionAnswers;
+  }
+
+  function isMockNavigable(q) {
+    return mockState.phase !== 'extra' || !sessionAnswers.hasOwnProperty(q.id);
+  }
+
   function initMockNav() {
     const nav = document.getElementById('mock-nav');
     nav.innerHTML = '';
     nav.style.display = 'flex';
-    document.getElementById('mock-status-bar').style.display = 'block';
-    updateMockStatus();
+    document.getElementById('mock-status-bar').style.display = 'flex';
 
+    let lastGenre = null;
     filteredQuestions.forEach((q, idx) => {
+      if (q.genre !== lastGenre) {
+        const label = document.createElement('div');
+        label.className = 'mock-nav-group';
+        label.textContent = q.genre;
+        nav.appendChild(label);
+        lastGenre = q.genre;
+      }
       const btn = document.createElement('button');
       btn.textContent = idx + 1;
-      btn.style.cssText = "width: 32px; height: 32px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; font-weight: bold; color: var(--text);";
-      btn.onclick = () => { curIdx = idx; renderQuestion(); };
+      btn.className = 'mock-nav-btn';
       btn.id = `mock-nav-btn-${idx}`;
+      btn.onclick = () => {
+        if (!isMockNavigable(q)) return;
+        curIdx = idx;
+        renderQuestion();
+      };
       nav.appendChild(btn);
     });
+    updateMockStatus();
   }
 
   function updateMockStatus() {
-    if (!isMockMode) return;
-    
-    document.getElementById('mock-answered-count').textContent = mockAnsweredCount;
+    if (!isMockMode || !mockState) return;
+    const inExtra = mockState.phase === 'extra';
+    const answers = mockAnswerMap();
+    mockAnsweredCount = Object.keys(sessionAnswers).length;
+
     filteredQuestions.forEach((q, idx) => {
       const btn = document.getElementById(`mock-nav-btn-${idx}`);
-      if (btn) {
-        if (sessionAnswers.hasOwnProperty(q.id)) {
-          btn.style.background = 'var(--primary)';
-          btn.style.color = '#fff';
-          btn.style.borderColor = 'var(--primary)';
-        } else {
-          btn.style.background = (idx === curIdx) ? 'var(--info-bg)' : 'var(--bg)';
-          btn.style.color = (idx === curIdx) ? 'var(--primary)' : 'var(--text)';
-          btn.style.borderColor = (idx === curIdx) ? 'var(--primary)' : 'var(--border)';
+      if (!btn) return;
+      btn.classList.toggle('answered', answers.hasOwnProperty(q.id));
+      btn.classList.toggle('current', idx === curIdx);
+      btn.classList.toggle('locked', !isMockNavigable(q));
+    });
+
+    const extraTotal = filteredQuestions.length - mockAnsweredCount;
+    document.getElementById('mock-count-label').innerHTML = inExtra
+      ? `解答: ${Object.keys(mockState.extraAnswers).length} / ${extraTotal} 問`
+      : `選択: <span id="mock-answered-count">${mockAnsweredCount}</span> / ${MAX_MOCK_SELECT} 問`;
+    document.getElementById('mock-submit-btn').textContent = inExtra ? '答え合わせ' : '提出して採点';
+
+    // 大分類ごとの選択状況（選択戦略の確認用）
+    const blocks = [];
+    const seen = {};
+    filteredQuestions.forEach(q => {
+      if (!seen[q.genre]) { seen[q.genre] = { total: 0, sel: 0 }; blocks.push(q.genre); }
+      seen[q.genre].total++;
+      if (answers.hasOwnProperty(q.id)) seen[q.genre].sel++;
+    });
+    document.getElementById('mock-blocks').textContent = blocks
+      .map(g => `${g.replace('・建築物衛生管理', '')} ${seen[g].sel}/${seen[g].total}`)
+      .join('　');
+    updateMockTimerLabel();
+  }
+
+  function renderQuestionImage(q) {
+    const imgContainer = document.getElementById("q-image-container");
+    if (q.imageUrl) {
+        imgContainer.innerHTML = `<a href="${q.imageUrl}" target="_blank" rel="noopener" title="タップで拡大"><img src="${q.imageUrl}" class="question-image" alt="問題図" onerror="this.parentElement.style.display='none';"></a>`;
+        imgContainer.style.display = "block";
+    } else {
+        imgContainer.innerHTML = "";
+        imgContainer.style.display = "none";
+    }
+  }
+
+  // 試験中の表示：正誤・解説は出さず、解答は何度でも変更できる
+  function renderMockExamQuestion() {
+    const q = filteredQuestions[curIdx];
+    const answers = mockAnswerMap();
+
+    document.getElementById('prog-label').textContent = `問 ${curIdx + 1} / ${filteredQuestions.length}`;
+    document.getElementById('cat-label').textContent = q.genre;
+    document.getElementById('trend-label').style.display = 'none';
+    document.getElementById('q-source').style.display = 'none';
+    document.getElementById('q-text').innerHTML = DOMPurify.sanitize(marked.parse(q.question));
+    renderQuestionImage(q);
+
+    const optBox = document.getElementById('opt-box');
+    optBox.innerHTML = '';
+    q.options.forEach((opt, idx) => {
+      const btn = document.createElement('button');
+      btn.className = 'option-btn';
+      btn.innerHTML = DOMPurify.sanitize(marked.parse(`**${idx + 1}.** ${opt}`));
+      if (answers[q.id] === idx) btn.classList.add('selected');
+      btn.onclick = () => selectMockOption(idx);
+      optBox.appendChild(btn);
+    });
+    if (window.MathJax && window.MathJax.typesetPromise) {
+      MathJax.typesetPromise([document.getElementById('q-text'), optBox]).catch(err => console.error("MathJax error:", err));
+    }
+
+    document.getElementById('exp-box').classList.remove('show');
+    document.getElementById('mock-controls').style.display = 'flex';
+    document.getElementById('mock-clear-btn').disabled = !answers.hasOwnProperty(q.id);
+    document.getElementById('next-btn').style.display = 'none';
+    updateMockStatus();
+  }
+
+  function selectMockOption(idx) {
+    const q = filteredQuestions[curIdx];
+    const answers = mockAnswerMap();
+    if (!answers.hasOwnProperty(q.id) && mockState.phase === 'exam' && Object.keys(sessionAnswers).length >= MAX_MOCK_SELECT) {
+      alert(`すでに${MAX_MOCK_SELECT}問を選択しています。\nこの問題を解くには、他の問題の「選択取消」を押して枠を空けてください。`);
+      return;
+    }
+    answers[q.id] = idx;
+    renderMockExamQuestion();
+    saveCurrentSession();
+  }
+
+  window.clearMockAnswer = function() {
+    const q = filteredQuestions[curIdx];
+    delete mockAnswerMap()[q.id];
+    renderMockExamQuestion();
+    saveCurrentSession();
+  };
+
+  window.mockMove = function(dir) {
+    let i = curIdx + dir;
+    while (i >= 0 && i < filteredQuestions.length && !isMockNavigable(filteredQuestions[i])) i += dir;
+    if (i < 0 || i >= filteredQuestions.length) return;
+    curIdx = i;
+    renderQuestion();
+    window.scrollTo(0, 0);
+  };
+
+  // 模擬試験で解いた過去問を学習記録にも反映する（AI問題は除く）
+  function recordLearning(q, selectedIdx) {
+    if (!allQuestions.some(aq => aq.id === q.id)) return;
+    if (!userMemory.history[q.id]) userMemory.history[q.id] = { c: 0, w: 0 };
+    const isCorrect = selectedIdx === q.answer;
+    if (isCorrect) { userMemory.history[q.id].c++; userMemory.history[q.id].w = 0; }
+    else userMemory.history[q.id].w++;
+    userMemory.stats.total++;
+    if (isCorrect) userMemory.stats.correct++;
+  }
+
+  window.submitMockExam = function(force = false) {
+    if (!mockState) return;
+
+    if (mockState.phase === 'exam') {
+      const n = Object.keys(sessionAnswers).length;
+      if (!force) {
+        const msg = n < MAX_MOCK_SELECT
+          ? `まだ${n}問しか選択していません（あと${MAX_MOCK_SELECT - n}問選べます）。\n誤答による減点はないので、25問すべて解答するのがおすすめです。\n\nこのまま提出しますか？`
+          : "提出して採点しますか？\n（提出後は解答を変更できません）";
+        if (!confirm(msg)) return;
+      }
+      stopMockTimer();
+      mockState.phase = 'graded';
+      filteredQuestions.forEach(q => { if (sessionAnswers.hasOwnProperty(q.id)) recordLearning(q, sessionAnswers[q.id]); });
+    } else if (mockState.phase === 'extra') {
+      const extraTotal = filteredQuestions.length - Object.keys(sessionAnswers).length;
+      const n = Object.keys(mockState.extraAnswers).length;
+      if (!force && n < extraTotal && !confirm(`未解答が${extraTotal - n}問あります（未解答は不正解として扱います）。\n答え合わせをしますか？`)) return;
+      mockState.phase = 'done';
+      filteredQuestions.forEach(q => { if (mockState.extraAnswers.hasOwnProperty(q.id)) recordLearning(q, mockState.extraAnswers[q.id]); });
+    } else {
+      return;
+    }
+
+    saveMockRecord(computeMockAnalysis());
+    clearSavedSession();
+    window.showResults();
+  };
+
+  window.startMockExtraPhase = function() {
+    mockState.phase = 'extra';
+    curIdx = filteredQuestions.findIndex(q => !sessionAnswers.hasOwnProperty(q.id));
+    if (curIdx < 0) return;
+    document.getElementById('ai-loading').style.display = 'none';
+    document.getElementById('q-text').style.display = 'block';
+    document.getElementById('opt-box').style.display = 'flex';
+    switchScreen('screen-quiz');
+    initMockNav();
+    renderQuestion();
+    window.scrollTo(0, 0);
+    saveCurrentSession();
+  };
+
+  function computeMockAnalysis() {
+    const extra = (mockState && mockState.extraAnswers) || {};
+    const a = { groups: {}, order: [], selCount: 0, selCorrect: 0, unselCount: 0, extraAnswered: 0, extraCorrect: 0 };
+    filteredQuestions.forEach(q => {
+      if (!a.groups[q.genre]) { a.groups[q.genre] = { total: 0, sel: 0, selCorrect: 0, unsel: 0, extraCorrect: 0 }; a.order.push(q.genre); }
+      const g = a.groups[q.genre];
+      g.total++;
+      if (sessionAnswers.hasOwnProperty(q.id)) {
+        g.sel++; a.selCount++;
+        if (sessionAnswers[q.id] === q.answer) { g.selCorrect++; a.selCorrect++; }
+      } else {
+        g.unsel++; a.unselCount++;
+        if (extra.hasOwnProperty(q.id)) {
+          a.extraAnswered++;
+          if (extra[q.id] === q.answer) { g.extraCorrect++; a.extraCorrect++; }
         }
       }
     });
+    // 35問のうち正解できた問題から25問を選んでいた場合の得点（選択が最適だった場合）
+    a.bestScore = Math.min(MAX_MOCK_SELECT, a.selCorrect + a.extraCorrect);
+    a.rate = Math.round((a.selCorrect / MAX_MOCK_SELECT) * 100);
+    a.passed = a.selCorrect >= MOCK_PASS_COUNT;
+    return a;
+  }
 
-    const nextBtn = document.getElementById('next-btn');
-    if (mockAnsweredCount >= MAX_MOCK_SELECT) {
-      nextBtn.textContent = '25問選択完了！ 採点結果を見る';
-      nextBtn.disabled = false;
-      nextBtn.onclick = showResults;
-      nextBtn.style.background = 'var(--danger-btn)';
+  function saveMockRecord(a) {
+    if (window.isViewingPastMock) return;
+    const record = {
+      id: mockState.recordId || ("mock_" + Date.now()),
+      date: nowLabel(),
+      score: { correct: a.selCorrect, total: MAX_MOCK_SELECT, rate: a.rate },
+      questions: filteredQuestions,
+      answers: sessionAnswers,
+      extraAnswers: mockState.extraAnswers,
+      bestScore: mockState.phase === 'done' ? a.bestScore : null,
+      sourceLabel: mockState.sourceLabel,
+      timeLimitSec: mockState.timeLimitSec,
+      elapsedSec: Math.round(mockState.elapsedSec || 0)
+    };
+    const i = userMemory.mockExams.findIndex(e => e.id === record.id);
+    if (i >= 0) {
+      record.date = userMemory.mockExams[i].date;
+      userMemory.mockExams[i] = record;
+    } else {
+      userMemory.mockExams.push(record);
+      if (userMemory.mockExams.length > 10) userMemory.mockExams.shift();
     }
+    mockState.recordId = record.id;
+    saveUserData();
+  }
+
+  function pct(n, d) { return d > 0 ? Math.round((n / d) * 100) : 0; }
+
+  function renderMockAnalysis(a) {
+    const box = document.getElementById('mock-analysis');
+    const showExtra = mockState.phase === 'done' && a.unselCount > 0;
+    let html = '';
+
+    const info = [];
+    if (mockState.sourceLabel) info.push(`出題: ${mockState.sourceLabel}`);
+    if (mockState.elapsedSec) info.push(`使用時間: ${formatDuration(mockState.elapsedSec)}${mockState.timeLimitSec ? ` / ${mockState.timeLimitSec / 60}分` : ''}`);
+    if (info.length) html += `<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">${info.join('　')}</div>`;
+
+    html += `<div class="mock-setup-card"><h3>📊 分野別の選択と結果</h3><table class="mock-table">
+      <tr><th>大分類</th><th>出題</th><th>選択</th><th>正解</th><th>正答率</th>${showExtra ? '<th>非選択で<br>正解</th>' : ''}</tr>`;
+    a.order.forEach(gName => {
+      const g = a.groups[gName];
+      html += `<tr><td>${gName}</td><td>${g.total}</td><td>${g.sel}</td><td>${g.selCorrect}</td><td>${g.sel ? pct(g.selCorrect, g.sel) + '%' : '-'}</td>${showExtra ? `<td>${g.extraCorrect} / ${g.unsel}</td>` : ''}</tr>`;
+    });
+    html += '</table>';
+    if (a.selCount < MAX_MOCK_SELECT) {
+      html += `<div style="margin-top:8px;font-size:0.85rem;color:var(--danger-text);">⚠️ 選択が${a.selCount}問で、${MAX_MOCK_SELECT - a.selCount}問分の得点機会を使っていません。誤答の減点はないので、25問すべて解答しましょう。</div>`;
+    }
+    html += '</div>';
+
+    if (showExtra) {
+      const loss = a.bestScore - a.selCorrect;
+      html += `<div class="mock-setup-card"><h3>🎯 選択戦略の振り返り</h3>
+        <div class="mock-compare">
+          <div><div style="font-size:0.8rem;">選んだ問題の正答率</div><div class="big">${pct(a.selCorrect, a.selCount)}%</div><div style="font-size:0.8rem;">${a.selCorrect} / ${a.selCount}問</div></div>
+          <div><div style="font-size:0.8rem;">選ばなかった問題の正答率</div><div class="big">${pct(a.extraCorrect, a.unselCount)}%</div><div style="font-size:0.8rem;">${a.extraCorrect} / ${a.unselCount}問</div></div>
+        </div>
+        <div style="font-size:0.9rem;">最適な25問を選んでいた場合: <b>${a.bestScore}問正解（${pct(a.bestScore, MAX_MOCK_SELECT)}%）</b>　実際: ${a.selCorrect}問</div>`;
+      if (loss === 0) {
+        html += `<div style="margin-top:8px;color:var(--success-text);font-weight:bold;">✨ 選択は最適でした。解ける問題をきちんと選べています。</div>`;
+      } else {
+        html += `<div style="margin-top:8px;color:var(--trend-text);font-weight:bold;">選択を入れ替えていれば、あと${loss}問（正答率 +${pct(loss, MAX_MOCK_SELECT)}%）取れていました。</div>`;
+        if (!a.passed && a.bestScore >= MOCK_PASS_COUNT) {
+          html += `<div style="margin-top:4px;color:var(--danger-text);font-weight:bold;">⚠️ 選び方次第で合格ラインに届いていました。</div>`;
+        }
+        html += `<div style="margin-top:6px;font-size:0.85rem;">選んで不正解: ${a.selCount - a.selCorrect}問 ／ 選ばずに正解できた: ${a.extraCorrect}問。下の一覧の「非選択」の正解問題と「選択」の不正解問題を見比べると、選び方のクセが分かります。</div>`;
+      }
+      html += '</div>';
+    } else if (mockState.phase === 'graded' && a.unselCount > 0 && !window.isViewingPastMock) {
+      html += `<div class="mock-setup-card"><h3>🎯 選択戦略をチェック</h3>
+        選ばなかった${a.unselCount}問も解いてみましょう。選んだ問題と比べて、選び方が最適だったか（何点取れていたか）が分かります。
+        <button class="nav-btn" style="margin-top:12px;" onclick="startMockExtraPhase()">選ばなかった${a.unselCount}問を解く（時間制限なし）</button></div>`;
+    }
+
+    box.innerHTML = html;
+    box.style.display = 'block';
   }
 
 
@@ -1447,6 +1931,7 @@
     window.isViewingPastMock = false;
     isMockMode = false;
     isAiMode = false;
+    mockState = null;
     let questionsPool = [...currentTargetQuestions];
     const orderType = document.getElementById('order-filter').value;
     const selectedCountStr = document.getElementById('count-filter').value;
@@ -1488,6 +1973,7 @@
     window.isViewingPastMock = false;
     isMockMode = false;
     isAiMode = true;
+    mockState = null;
     sessionAnswers = {};
     filteredQuestions = [];
     curIdx = 0;
@@ -1635,9 +2121,14 @@ ${refText}
   }
 
   function renderQuestion() {
+    if (isMockMode && mockState && (mockState.phase === 'exam' || mockState.phase === 'extra')) {
+      renderMockExamQuestion();
+      return;
+    }
+    document.getElementById('mock-controls').style.display = 'none';
+    document.getElementById('next-btn').style.display = '';
+
     const q = filteredQuestions[curIdx];
-    
-    if (isMockMode) updateMockStatus();
 
     document.getElementById('prog-label').textContent = isMockMode ? `問 ${curIdx + 1}` : `問 ${curIdx + 1} / ${filteredQuestions.length}`;
     document.getElementById('cat-label').textContent = (q.topic && q.topic !== q.subgenre)
@@ -1675,14 +2166,7 @@ ${refText}
         trendLabel.style.display = "none";
     }
 
-    const imgContainer = document.getElementById("q-image-container");
-    if (q.imageUrl) {
-        imgContainer.innerHTML = `<a href="${q.imageUrl}" target="_blank" rel="noopener" title="タップで拡大"><img src="${q.imageUrl}" class="question-image" alt="問題図" onerror="this.parentElement.style.display='none';"></a>`;
-        imgContainer.style.display = "block";
-    } else {
-        imgContainer.innerHTML = "";
-        imgContainer.style.display = "none";
-    }
+    renderQuestionImage(q);
 
     const optBox = document.getElementById('opt-box');
     optBox.innerHTML = ''; 
@@ -1912,7 +2396,8 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
       filteredQuestions: filteredQuestions,
       sessionAnswers: sessionAnswers,
       curIdx: curIdx,
-      mockAnsweredCount: mockAnsweredCount
+      mockAnsweredCount: mockAnsweredCount,
+      mockState: mockState
     };
     saveUserData();
   }
@@ -1939,6 +2424,11 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
     sessionAnswers = userMemory.savedSession.sessionAnswers;
     curIdx = userMemory.savedSession.curIdx;
     mockAnsweredCount = userMemory.savedSession.mockAnsweredCount || 0;
+    mockState = userMemory.savedSession.mockState || null;
+    if (isMockMode && !mockState) {
+      // 旧バージョンの腕試しモードで中断したデータ
+      mockState = { phase: 'exam', sourceLabel: 'AI予想問題', timeLimitSec: 0, remainingSec: 0, elapsedSec: 0, extraAnswers: {}, recordId: null };
+    }
 
     document.getElementById('ai-loading').style.display = 'none';
     document.getElementById('q-text').style.display = 'block';
@@ -1956,13 +2446,13 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
     
     switchScreen('screen-quiz');
     renderQuestion();
+    if (isMockMode) startMockTimer();
   };
 
   window.quitQuiz = function() {
     if (isMockMode) {
-      if(confirm("腕試しモードを終了して、現在解答した問題だけの結果を見ますか？\n\n※「キャンセル」を押すと、結果を見ずにスタート画面に戻ります。再開用のデータは自動で保存されています。")) {
-         window.showResults();
-      } else {
+      if (confirm("試験を中断してスタート画面に戻りますか？\n\n解答と残り時間は保存され、「続きから再開する」で再開できます（中断中はタイマーが止まります）。\n採点する場合は、上の「提出して採点」を押してください。")) {
+         stopMockTimer();
          saveCurrentSession();
          window.goToStart();
       }
@@ -1982,53 +2472,27 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
   }
 
   window.showResults = function() {
-    let correctCount = 0;
-    const questionsToEval = filteredQuestions.filter(q => sessionAnswers.hasOwnProperty(q.id));
-    
-    questionsToEval.forEach(q => {
-      const isCorrect = sessionAnswers[q.id] === q.answer;
-      if (isCorrect) correctCount++;
-    });
+    stopMockTimer();
+    const analysisBox = document.getElementById('mock-analysis');
 
-    const count = questionsToEval.length;
-    
-    const denom = isMockMode ? MAX_MOCK_SELECT : count; 
-    const rate = denom > 0 ? Math.round((correctCount / denom) * 100) : 0;
-    
-    document.getElementById("score-text").textContent = `${rate}%`;
-    document.getElementById("score-detail").textContent = `${correctCount} / ${denom} 問 正解`;
-
-    let mockEvalText = "";
-    if (isMockMode) {
-      if (rate >= 60) {
-        mockEvalText = "<div style='color: var(--success-text); margin-top:12px;'>🎉 合格ライン（60%以上）に達しています！</div>";
-      } else {
-        mockEvalText = "<div style='color: var(--trend-text); margin-top:12px;'>💪 合格ラインまであと少し！復習しましょう。</div>";
-      }
-      document.getElementById("score-detail").innerHTML = `${correctCount} / ${denom} 問 正解` + mockEvalText;
-
-      if (!window.isViewingPastMock) {
-        const now = new Date();
-        const yyyy = now.getFullYear();
-        const MM = String(now.getMonth() + 1).padStart(2, '0');
-        const dd = String(now.getDate()).padStart(2, '0');
-        const hh = String(now.getHours()).padStart(2, '0');
-        const mm = String(now.getMinutes()).padStart(2, '0');
-        
-        const mockRecord = {
-          id: "mock_" + now.getTime(),
-          date: `${yyyy}/${MM}/${dd} ${hh}:${mm}`,
-          score: { correct: correctCount, total: denom, rate: rate },
-          questions: filteredQuestions,
-          answers: sessionAnswers
-        };
-        
-        userMemory.mockExams.push(mockRecord);
-        if (userMemory.mockExams.length > 10) {
-          userMemory.mockExams.shift();
-        }
-        saveUserData();
-      }
+    if (isMockMode && mockState) {
+      const a = computeMockAnalysis();
+      document.getElementById("score-text").textContent = `${a.rate}%`;
+      const passText = a.passed
+        ? `<div style='color: var(--success-text); margin-top:12px;'>🎉 合格ライン（${MOCK_PASS_COUNT}問・50%以上）に達しています！</div>`
+        : `<div style='color: var(--trend-text); margin-top:12px;'>💪 合格ライン（${MOCK_PASS_COUNT}問・50%以上）まであと${MOCK_PASS_COUNT - a.selCorrect}問！復習しましょう。</div>`;
+      document.getElementById("score-detail").innerHTML = `${a.selCorrect} / ${MAX_MOCK_SELECT} 問 正解` + passText;
+      renderMockAnalysis(a);
+    } else {
+      analysisBox.style.display = 'none';
+      analysisBox.innerHTML = '';
+      let correctCount = 0;
+      const questionsToEval = filteredQuestions.filter(q => sessionAnswers.hasOwnProperty(q.id));
+      questionsToEval.forEach(q => { if (sessionAnswers[q.id] === q.answer) correctCount++; });
+      const count = questionsToEval.length;
+      const rate = count > 0 ? Math.round((correctCount / count) * 100) : 0;
+      document.getElementById("score-text").textContent = `${rate}%`;
+      document.getElementById("score-detail").textContent = `${correctCount} / ${count} 問 正解`;
     }
 
     if (!window.isViewingPastMock) {
@@ -2063,13 +2527,15 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
         const item = document.createElement('div');
         item.className = 'mock-history-item';
         
-        const isPass = exam.score.rate >= 60;
+        const isPass = exam.score.correct >= MOCK_PASS_COUNT;
         const scoreColor = isPass ? 'var(--success-text)' : 'var(--trend-text)';
 
         item.innerHTML = `
           <div class="mock-history-info">
             <span class="mock-history-date">📅 ${exam.date}</span>
-            <span class="mock-history-score" style="color: ${scoreColor}">${exam.score.rate}% (${exam.score.correct}/${exam.score.total}問)</span>
+            <span class="mock-history-score" style="color: ${scoreColor}">${exam.score.rate}% (${exam.score.correct}/${exam.score.total}問)${isPass ? ' 合格' : ''}</span>
+            ${exam.bestScore != null ? `<span class="mock-history-date">最適な選択なら ${exam.bestScore}問</span>` : ''}
+            ${exam.sourceLabel ? `<span class="mock-history-date">${exam.sourceLabel}</span>` : ''}
           </div>
           <div class="mock-history-actions">
             <button class="nav-btn" style="padding: 8px 16px; font-size: 0.85rem; width: auto;" onclick="viewPastMock('${exam.id}')">詳細を見る</button>
@@ -2095,6 +2561,16 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
     filteredQuestions = exam.questions;
     sessionAnswers = exam.answers;
     mockAnsweredCount = Object.keys(sessionAnswers).length;
+    const extraAnswers = exam.extraAnswers || {};
+    mockState = {
+      phase: exam.bestScore != null ? 'done' : 'graded',
+      sourceLabel: exam.sourceLabel || '',
+      timeLimitSec: exam.timeLimitSec || 0,
+      remainingSec: 0,
+      elapsedSec: exam.elapsedSec || 0,
+      extraAnswers: extraAnswers,
+      recordId: exam.id
+    };
 
     window.showResults();
   };
@@ -2119,8 +2595,10 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
     let displayedCount = 0;
 
     questions.forEach((q, index) => {
-      const isAnswered = sessionAnswers.hasOwnProperty(q.id);
-      const userAnsIdx = isAnswered ? sessionAnswers[q.id] : -1;
+      const extraAnswers = (isMockMode && mockState && mockState.extraAnswers) || {};
+      const isSelected = sessionAnswers.hasOwnProperty(q.id);
+      const isAnswered = isSelected || extraAnswers.hasOwnProperty(q.id);
+      const userAnsIdx = isSelected ? sessionAnswers[q.id] : (isAnswered ? extraAnswers[q.id] : -1);
       const isCorrect = isAnswered && userAnsIdx === q.answer;
       
       if (filterMode === 'wrong' && isCorrect) return;
@@ -2153,7 +2631,7 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
 
       item.innerHTML = `
         <div class="hi-header">
-          <span>問 ${displayNum} <span style="font-size:0.75rem; font-weight:normal;">(${q.year})</span></span>
+          <span>問 ${displayNum} <span style="font-size:0.75rem; font-weight:normal;">(${q.year})</span>${isMockMode ? `<span class="hi-tag ${isSelected ? 'sel' : ''}">${isSelected ? '選択' : '非選択'}</span>` : ''}</span>
           <span class="hi-mark">${markText}</span>
         </div>
         <div class="hi-q md-content">${qTextHtml}</div>
