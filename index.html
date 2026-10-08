@@ -354,7 +354,7 @@
       <p>このアプリの最大の特徴は、Googleの生成AI（Gemini）を活用して<b>「過去問と似た傾向の新しいオリジナル予想問題」</b>を作成できる点です。また、問題の解説をさらに詳しくAIに質問することもできます。</p>
       <ul>
         <li><b>AI予想問題 網羅特訓:</b> 選択したジャンルの過去問を分析し、新しい5択問題を自動生成します。</li>
-        <li><b>腕試しモード:</b> 本番と同じく「35問中から25問を選んで解答」し、制限時間付きで受ける模擬試験です。50%以上（13問以上）正解で合格ライン。出題は過去問ミックス・年度指定（APIキー不要）か、AI予想問題から選べます。試験後に「選ばなかった問題」も解くと、選び方が最適だったか（何点取れていたか）を確認できます。</li>
+        <li><b>腕試しモード:</b> 本番と同じく「35問中から25問を選んで解答」し、制限時間付きで受ける模擬試験です。50%以上（13問以上）正解で合格ライン。出題は標準の「AI予想問題 35問すべて新作」のほか、AI予想＋過去問、過去問ミックス・年度指定（APIキー不要）から選べます。試験後に「選ばなかった問題」も解くと、選び方が最適だったか（何点取れていたか）を確認できます。</li>
       </ul>
       <div class="warning-text" style="margin-top: 12px;">
         ※AI機能（詳細解説・予想問題・腕試しモードのAI出題）を利用するには、ご自身で「APIキー」を取得してアプリに設定する必要があります（無料）。詳しくは下記の手順をご覧ください。
@@ -1352,9 +1352,11 @@
   window.openMockSetup = function() {
     const sel = document.getElementById('mock-source');
     sel.innerHTML = '';
+    sel.add(new Option('AI予想問題 35問すべて新作（APIキー必要）', 'ai35'));
+    sel.add(new Option('AI予想問題28問＋過去問7問（APIキー必要）', 'ai'));
     sel.add(new Option('過去問ミックス（問1〜35を各年度からランダムに抽出）', 'mix'));
     masterYears.forEach(y => sel.add(new Option(`過去問 ${y}（本試験そのまま）`, `year:${y}`)));
-    sel.add(new Option('AI予想問題28問＋過去問7問（APIキー必要）', 'ai'));
+    sel.value = 'ai35';
     renderMockStrategy();
     switchScreen('screen-mock-setup');
     window.scrollTo(0, 0);
@@ -1380,7 +1382,7 @@
       const apiKey = localStorage.getItem('my_gemini_api_key');
       if (!apiKey) { alert("AI予想問題を使うには、スタート画面の設定エリアで Gemini APIキーを保存してください。"); return; }
       try {
-        questions = await buildAIMockSet(apiKey);
+        questions = await buildAIMockSet(apiKey, AI_MOCK_PLANS[source]);
       } catch (error) {
         console.error(error);
         alert("問題生成に失敗しました: " + error.message);
@@ -1396,7 +1398,7 @@
   function beginMockExam(questions, settings) {
     window.isViewingPastMock = false;
     isMockMode = true;
-    isAiMode = settings.source === 'ai';
+    isAiMode = settings.source.startsWith('ai');
     filteredQuestions = questions;
     sessionAnswers = {};
     mockAnsweredCount = 0;
@@ -1463,8 +1465,23 @@
     }
   }
 
-  // AI予想問題28問＋過去問7問のセットを作る（建築→水質→廃棄物の順）
-  async function buildAIMockSet(apiKey) {
+  // 本番の分野構成（建築→水質→廃棄物の順）。ai: AI生成数、past: 過去問から補う数
+  const AI_MOCK_PLANS = {
+    ai35: [
+      { genre: "建築環境・設備・建築物衛生管理", ai: 17, past: 0 },
+      { genre: "水質管理", ai: 7, past: 0 },
+      { genre: "廃棄物管理", ai: 11, past: 0 }
+    ],
+    ai: [
+      { genre: "建築環境・設備・建築物衛生管理", ai: 14, past: 3 },
+      { genre: "水質管理", ai: 7, past: 2 },
+      { genre: "廃棄物管理", ai: 7, past: 2 }
+    ]
+  };
+  const AI_BATCH_SIZE = 4;
+
+  // AI予想問題のセットを作る（分野ごとに4問ずつ生成し、重複を避けるため既出の問題文を渡す）
+  async function buildAIMockSet(apiKey, plan) {
     switchScreen('screen-quiz');
     document.getElementById('q-text').style.display = 'none';
     document.getElementById('opt-box').style.display = 'none';
@@ -1473,13 +1490,17 @@
     document.getElementById('mock-nav').style.display = 'none';
     document.getElementById('mock-controls').style.display = 'none';
     
+    const totalAiNeed = plan.reduce((sum, p) => sum + p.ai, 0);
+    const totalPast = plan.reduce((sum, p) => sum + p.past, 0);
+
     // ローディングとプログレスバーの表示
     document.getElementById('ai-loading').style.display = 'block';
     document.getElementById('ai-progress-container').style.display = 'block';
-    document.getElementById('ai-loading-msg').innerHTML = "本番形式の35問セットを構築中...<br>（AI生成28問 ＋ 過去問7問）";
+    document.getElementById('ai-loading-msg').innerHTML = totalPast > 0
+      ? `本番形式の35問セットを構築中...<br>（AI生成${totalAiNeed}問 ＋ 過去問${totalPast}問）`
+      : `本番形式の35問セットを構築中...<br>（すべてAIによる新作${totalAiNeed}問・数分かかります）`;
 
     let aiGeneratedCount = 0;
-    const totalAiNeed = 28;
 
     const updateProgress = (stepMsg, addedCount = 0) => {
       aiGeneratedCount += addedCount;
@@ -1497,69 +1518,29 @@
     };
 
     try {
-      updateProgress("「建築環境・設備」を作成中 (1/4)...", 0);
-      let kenchikuPrev = "";
-      
-      const kenchikuAI_1 = await fetchMockAIBatch("建築環境・設備・衛生管理", 4, apiKey, false, kenchikuPrev, retryCallback);
-      updateProgress("インターバル待機中...", kenchikuAI_1.length);
-      kenchikuPrev += kenchikuAI_1.map(q => "・" + q.question).join("\n") + "\n";
-      await new Promise(r => setTimeout(r, 1500)); 
-      
-      updateProgress("「建築環境・設備」を作成中 (2/4)...", 0);
-      const kenchikuAI_2 = await fetchMockAIBatch("建築環境・設備・衛生管理", 4, apiKey, false, kenchikuPrev, retryCallback);
-      updateProgress("インターバル待機中...", kenchikuAI_2.length);
-      kenchikuPrev += kenchikuAI_2.map(q => "・" + q.question).join("\n") + "\n";
-      await new Promise(r => setTimeout(r, 1500));
-      
-      updateProgress("「建築環境・設備」を作成中 (3/4)...", 0);
-      const kenchikuAI_3 = await fetchMockAIBatch("建築環境・設備・衛生管理", 4, apiKey, false, kenchikuPrev, retryCallback);
-      updateProgress("インターバル待機中...", kenchikuAI_3.length);
-      kenchikuPrev += kenchikuAI_3.map(q => "・" + q.question).join("\n") + "\n";
-      await new Promise(r => setTimeout(r, 1500));
-      
-      updateProgress("「建築環境・設備」を作成中 (4/4)...", 0);
-      const kenchikuAI_4 = await fetchMockAIBatch("建築環境・設備・衛生管理", 2, apiKey, false, kenchikuPrev, retryCallback);
-      updateProgress("ジャンル切替の待機中...", kenchikuAI_4.length);
-      
-      const kenchikuPast = getRandomQuestions("建築環境・設備・衛生管理", 3);
-      const kenchikuAll = shuffleArray([...kenchikuAI_1, ...kenchikuAI_2, ...kenchikuAI_3, ...kenchikuAI_4, ...kenchikuPast]);
-      
-      await new Promise(r => setTimeout(r, 2000)); 
-      
-      // 水質管理
-      updateProgress("「水質管理」を作成中 (1/2)...", 0);
-      let suishitsuPrev = "";
-      const suishitsuAI_1 = await fetchMockAIBatch("水質管理", 4, apiKey, false, suishitsuPrev, retryCallback);
-      updateProgress("インターバル待機中...", suishitsuAI_1.length);
-      suishitsuPrev += suishitsuAI_1.map(q => "・" + q.question).join("\n") + "\n";
-      await new Promise(r => setTimeout(r, 1500));
-      
-      updateProgress("「水質管理」を作成中 (2/2)...", 0);
-      const suishitsuAI_2 = await fetchMockAIBatch("水質管理", 3, apiKey, false, suishitsuPrev, retryCallback);
-      updateProgress("ジャンル切替の待機中...", suishitsuAI_2.length);
-      
-      const suishitsuPast = getRandomQuestions("水質管理", 2);
-      const suishitsuAll = shuffleArray([...suishitsuAI_1, ...suishitsuAI_2, ...suishitsuPast]);
-
-      await new Promise(r => setTimeout(r, 2000)); 
-
-      // 廃棄物管理
-      updateProgress("「廃棄物管理」を作成中 (1/2)...", 0);
-      let haikibutsuPrev = "";
-      const haikibutsuAI_1 = await fetchMockAIBatch("廃棄物管理", 4, apiKey, false, haikibutsuPrev, retryCallback);
-      updateProgress("インターバル待機中...", haikibutsuAI_1.length);
-      haikibutsuPrev += haikibutsuAI_1.map(q => "・" + q.question).join("\n") + "\n";
-      await new Promise(r => setTimeout(r, 1500));
-      
-      updateProgress("「廃棄物管理」を作成中 (2/2)...", 0);
-      const haikibutsuAI_2 = await fetchMockAIBatch("廃棄物管理", 3, apiKey, false, haikibutsuPrev, retryCallback);
-      updateProgress("全問題の準備完了！", haikibutsuAI_2.length);
-      
-      const haikibutsuPast = getRandomQuestions("廃棄物管理", 2);
-      const haikibutsuAll = shuffleArray([...haikibutsuAI_1, ...haikibutsuAI_2, ...haikibutsuPast]);
-
-      // 問題を結合 (本番通り建築→水質→廃棄物の順)
-      return [...kenchikuAll, ...suishitsuAll, ...haikibutsuAll];
+      updateProgress("準備中...", 0);
+      const result = [];
+      for (let gi = 0; gi < plan.length; gi++) {
+        const { genre, ai, past } = plan[gi];
+        const shortName = genre.replace('・建築物衛生管理', '');
+        const batches = Math.ceil(ai / AI_BATCH_SIZE);
+        let prevText = "";
+        const genreQuestions = [];
+        for (let bi = 0; bi < batches; bi++) {
+          const count = Math.min(AI_BATCH_SIZE, ai - bi * AI_BATCH_SIZE);
+          updateProgress(`「${shortName}」を作成中 (${bi + 1}/${batches})...`, 0);
+          const batch = await fetchMockAIBatch(genre, count, apiKey, false, prevText, retryCallback);
+          genreQuestions.push(...batch);
+          prevText += batch.map(q => "・" + q.question).join("\n") + "\n";
+          updateProgress("インターバル待機中...", batch.length);
+          // APIの連続呼び出し制限を避けるための待機
+          if (bi < batches - 1 || gi < plan.length - 1) await new Promise(r => setTimeout(r, 1500));
+        }
+        genreQuestions.push(...getRandomQuestions(genre, past));
+        result.push(...shuffleArray(genreQuestions));
+      }
+      updateProgress("全問題の準備完了！", 0);
+      return result;
     } finally {
       document.getElementById('ai-loading').style.display = 'none';
     }
