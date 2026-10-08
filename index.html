@@ -593,8 +593,9 @@
 </div>
 
 <script>
-  const EXCEL_FILE_NAME = "Sanitary_Engineering_Exam_DB_v29.xlsx";
+  const EXCEL_FILE_NAME = "Sanitary_Engineering_Exam_DB_v30.xlsx";
   const SHEET_NAME = "過去問マスターDB";
+  const FIGURE_DIR = "figures";
 
   let allQuestions = [];
   let masterYears = [];
@@ -854,8 +855,8 @@
   }
 
   async function loadExcelData() {
-    const timestamp = new Date().getTime();
-    const response = await fetch(`${EXCEL_FILE_NAME}?t=${timestamp}`);
+    // 図表入りでファイルが大きいため、毎回の再ダウンロードはせず、更新時だけ取り直す（no-cache = 再検証）
+    const response = await fetch(EXCEL_FILE_NAME, { cache: 'no-cache' });
     if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
     const arrayBuffer = await response.arrayBuffer();
     processExcelArrayBuffer(arrayBuffer);
@@ -926,7 +927,11 @@
       const theme = String(row['問題のテーマ・内容概要'] || '').trim();
       const exp = theme ? `【テーマ・内容概要】\n${theme}` : "【解説】\n詳細な解説はありません。";
       
-      const imgName = String(row['画像ファイル名'] || row['画像URL'] || '').trim();
+      // 「図表」列に記載がある問題は、DBの図表シートから書き出した figures/<問題ID>.png を表示する
+      const qId = String(row['問題ID'] || '').trim();
+      const hasFigure = String(row['図表'] || '').trim() !== '' && qId !== '';
+      const imgName = String(row['画像ファイル名'] || row['画像URL'] || '').trim()
+                      || (hasFigure ? `${FIGURE_DIR}/${encodeURIComponent(qId)}.png` : '');
       
       return {
         id: `${yearStr}_${qNumStr}`, 
@@ -1672,7 +1677,7 @@ ${refText}
 
     const imgContainer = document.getElementById("q-image-container");
     if (q.imageUrl) {
-        imgContainer.innerHTML = `<img src="${q.imageUrl}" class="question-image" alt="問題図" onerror="this.style.display='none';">`;
+        imgContainer.innerHTML = `<a href="${q.imageUrl}" target="_blank" rel="noopener" title="タップで拡大"><img src="${q.imageUrl}" class="question-image" alt="問題図" onerror="this.parentElement.style.display='none';"></a>`;
         imgContainer.style.display = "block";
     } else {
         imgContainer.innerHTML = "";

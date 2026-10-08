@@ -217,7 +217,7 @@
   } catch(e) {}
 
   const EXCEL_FILE = "matome.xlsx";
-  const EXCEL_DB_FILE = "Sanitary_Engineering_Exam_DB_v29.xlsx"; // 過去問DBも参照
+  const EXCEL_DB_FILE = "Sanitary_Engineering_Exam_DB_v30.xlsx"; // 過去問DBも参照
   let sheetDataMap = {}; 
   let currentSheetName = "";
   let currentGenres = new Set();
@@ -228,7 +228,7 @@
     const timestamp = new Date().getTime();
     
     // 追加: 過去問DBの非同期読み込み (まとめノートを読みながら裏で準備)
-    fetch(`${EXCEL_DB_FILE}?t=${timestamp}`).then(res => {
+    fetch(EXCEL_DB_FILE, { cache: 'no-cache' }).then(res => {
         if(res.ok) return res.arrayBuffer();
         throw new Error("DB file not found");
     }).then(buffer => {
