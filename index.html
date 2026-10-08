@@ -284,6 +284,28 @@
     [data-theme="dark"] .api-link:hover { color: #93c5fd; }
     .warning-text { color: var(--danger-text); font-size: 0.85rem; font-weight: bold; background: var(--danger-bg); padding: 10px; border-radius: 6px; border: 1px solid rgba(239,68,68,0.3); }
 
+    /* --- まとめノート連携・AI解説保存 --- */
+    .note-link-btn { margin-top: 12px; width: 100%; background: transparent; border: 1px solid var(--primary); color: var(--primary); border-radius: 8px; padding: 10px; font-weight: bold; font-size: 0.9rem; cursor: pointer; }
+    .note-link-btn:hover { background: var(--info-bg); }
+    .note-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; display: none; align-items: flex-end; justify-content: center; }
+    .note-modal.show { display: flex; }
+    .note-modal-panel { background: var(--card); color: var(--text); width: 100%; max-width: 640px; max-height: 85vh; overflow-y: auto; border-radius: 16px 16px 0 0; padding: 16px 16px 24px; animation: fadeIn 0.2s; }
+    .note-modal-head { display: flex; justify-content: space-between; align-items: center; position: sticky; top: -16px; background: var(--card); padding: 4px 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
+    .note-modal-head b { color: var(--primary); }
+    .note-card-mini { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; background: var(--bg); }
+    .note-card-mini .nc-sheet { font-size: 0.75rem; color: var(--text-muted); }
+    .note-card-mini .nc-title { font-weight: bold; margin: 4px 0 8px; }
+    .note-card-mini .nc-why { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: var(--info-bg); color: var(--primary); margin-left: 6px; font-weight: normal; }
+    .note-card-mini table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .note-card-mini th { text-align: left; vertical-align: top; color: var(--text-muted); font-weight: bold; padding: 6px 6px 6px 0; width: 30%; border-top: 1px dashed var(--border); }
+    .note-card-mini td { padding: 6px 0; border-top: 1px dashed var(--border); line-height: 1.6; overflow-wrap: anywhere; }
+    .note-card-mini a { display: inline-block; margin-top: 8px; font-size: 0.85rem; color: var(--primary); font-weight: bold; }
+    .ai-exp-title { flex-wrap: wrap; }
+    .ai-saved-meta { font-size: 0.75rem; color: var(--text-muted); font-weight: normal; flex-basis: 100%; }
+    .ai-regen-btn { background: transparent; border: none; color: #a855f7; cursor: pointer; font-size: 0.8rem; text-decoration: underline; padding: 0 0 0 8px; }
+    .hist-ai-box { margin-top: 10px; padding: 10px; border: 1px dashed rgba(168, 85, 247, 0.4); border-radius: 8px; background: rgba(168, 85, 247, 0.05); }
+    .hist-ai-btn { margin-top: 10px; background: transparent; border: 1px solid #a855f7; color: #a855f7; border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; cursor: pointer; font-weight: bold; }
+
     /* --- 本番形式 模擬試験 --- */
     .option-btn.selected { background-color: var(--info-bg); border-color: var(--primary); color: var(--primary); font-weight: bold; }
     .mock-bar { position: sticky; top: 0; z-index: 10; background: var(--trend-bg); color: var(--trend-text); padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-weight: bold; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; backdrop-filter: blur(6px); }
@@ -421,6 +443,7 @@
           <option value="unanswered">未回答の問題を優先</option>
           <option value="wrong">過去に間違えた問題を優先 (復習)</option>
           <option value="perfect">過去に正解した問題のみ</option>
+          <option value="ai-saved">AI解説を保存した問題のみ</option>
         </select>
       </div>
 
@@ -508,6 +531,8 @@
       <hr style="border: none; border-top: 1px dashed var(--border); margin: 24px 0;">
       <h3>🗑️ データ管理</h3>
       <div class="filter-group">
+        <div style="font-size: 0.9rem; margin-bottom: 8px;">保存したAI解説: <b id="ai-saved-count">0</b> 件</div>
+        <button class="nav-btn secondary" onclick="clearSavedExplanations()" style="margin-bottom: 12px;">保存したAI解説を削除する</button>
         <button class="nav-btn danger" onclick="resetHistory()">学習記録をリセットする</button>
         <div style="font-size: 0.8rem; margin-top: 8px; color: var(--text-muted); line-height: 1.5;">
           ※総解答数、正解数、各問題の正誤履歴がすべて消去されます。<br>
@@ -576,9 +601,12 @@
         <div class="ai-exp-title">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
           AI詳細解説
+          <span id="ai-saved-meta" class="ai-saved-meta"></span>
         </div>
         <div id="ai-explain-text" class="md-content"></div>
       </div>
+
+      <button id="note-link-btn" class="note-link-btn" style="display: none;" onclick="openNoteModal()">📚 まとめノートの関連公式・知識を見る</button>
     </div>
 
     <div id="mock-controls" class="mock-controls">
@@ -614,6 +642,16 @@
     </div>
     
     <button id="result-back-btn" class="nav-btn" onclick="goToStart()" style="margin-top: 24px;">設定・成績画面に戻る</button>
+  </div>
+
+  <div id="note-modal" class="note-modal" onclick="if(event.target === this) closeNoteModal()">
+    <div class="note-modal-panel">
+      <div class="note-modal-head">
+        <span>📚 <b>まとめノート</b> <span id="note-modal-qid" style="font-size:0.8rem;color:var(--text-muted);"></span></span>
+        <button class="icon-btn" onclick="closeNoteModal()" title="閉じる">✕</button>
+      </div>
+      <div id="note-modal-body"></div>
+    </div>
   </div>
 
   <div id="screen-mock-setup" class="screen">
@@ -712,6 +750,8 @@
 
   function finishInit() {
     loadUserData();
+    loadSavedExplanations();
+    loadMatomeNotes().catch(e => console.warn("まとめノート読み込みスキップ:", e));
     initApp();
     applyTheme(); 
     updateMemoryUI(); 
@@ -921,6 +961,7 @@
     document.getElementById('ms-correct').textContent = s.correct;
     const rate = s.total > 0 ? Math.round((s.correct / s.total) * 100) : 0;
     document.getElementById('ms-rate').textContent = `${rate}%`;
+    updateSavedExplanationCount();
     
     if (masterGenres && masterGenres.length > 0) {
         drawRadarChart();
@@ -1008,6 +1049,7 @@
       
       return {
         id: `${yearStr}_${qNumStr}`, 
+        qid: qId,
         year: yearStr,
         yearNum: yearNum,
         qNum: qNumStr,
@@ -1160,6 +1202,7 @@
       if (currentMemory === 'unanswered') return !h || (h.c === 0 && h.w === 0);
       if (currentMemory === 'wrong') return h && h.w > 0;
       if (currentMemory === 'perfect') return h && h.c > 0 && h.w === 0;
+      if (currentMemory === 'ai-saved') return !!savedExplanations[q.id];
       return true;
     };
 
@@ -1283,6 +1326,204 @@
   function getRandomQuestions(genre, count) {
     const pool = allQuestions.filter(q => q.genre === genre);
     return shuffleArray([...pool]).slice(0, count);
+  }
+
+  // --- AI解説の保存（問題IDごとに端末へ保存し、次回からは通信なしで表示） ---
+  const AI_EXP_KEY = 'ai_explanations';
+  let savedExplanations = {};
+
+  function loadSavedExplanations() {
+    try { savedExplanations = JSON.parse(localStorage.getItem(AI_EXP_KEY) || '{}') || {}; }
+    catch (e) { savedExplanations = {}; }
+  }
+
+  function saveExplanation(q, text, lite) {
+    savedExplanations[q.id] = { text: text, lite: !!lite, date: nowLabel() };
+    try {
+      localStorage.setItem(AI_EXP_KEY, JSON.stringify(savedExplanations));
+    } catch (e) {
+      delete savedExplanations[q.id];
+      alert("端末の保存容量が不足しているため、AI解説を保存できませんでした。\n設定画面の「保存したAI解説を削除する」で空きを作ってください。");
+    }
+    updateSavedExplanationCount();
+  }
+
+  function updateSavedExplanationCount() {
+    const el = document.getElementById('ai-saved-count');
+    if (el) el.textContent = Object.keys(savedExplanations).length;
+  }
+
+  window.clearSavedExplanations = function() {
+    const n = Object.keys(savedExplanations).length;
+    if (n === 0) { alert("保存したAI解説はありません。"); return; }
+    if (!confirm(`保存したAI解説 ${n} 件をすべて削除しますか？\n（この操作は取り消せません）`)) return;
+    savedExplanations = {};
+    try { localStorage.removeItem(AI_EXP_KEY); } catch (e) {}
+    updateSavedExplanationCount();
+    updateFilterUI();
+  };
+
+  function explanationMarkdown(saved) {
+    return saved.lite ? `**[Liteモデルによる解説]**\n\n${saved.text}` : saved.text;
+  }
+
+  // --- まとめノート連携（matome.xlsx から問題に関連する公式・知識・数値基準を探す） ---
+  const MATOME_FILE = "matome.xlsx";
+  let matomeNotes = null;
+  let matomeLoading = null;
+
+  // 出題論点（細目）→ まとめノートの見出し（公式シート・分野別知識シート）
+  const TOPIC_NOTE_MAP = {
+    "伝熱・断熱": ["伝熱・熱抵抗・熱貫流率", "伝熱・材料"],
+    "結露・湿気・湿り空気": ["結露・防湿層", "室湿熱・空気調和・熱量計算"],
+    "日照・日射・採光": ["日照・日射"],
+    "照明・光環境": ["照度・点光源の距離・角度法則", "照度・光環境"],
+    "音環境": ["音環境・遮音・残響時間", "遮音・音環境"],
+    "換気・通風": ["換気量・風力・温度差換気", "換気・空気質"],
+    "室内空気質・健康影響・衛生動物": ["換気・空気質", "環境・害虫管理", "浮遊微生物検査"],
+    "ホルムアルデヒド放散速度・面積": ["換気・空気質"],
+    "空調方式・省エネルギー": ["室湿熱・空気調和・熱量計算"],
+    "空調機器・ダクト・熱源": ["室湿熱・空気調和・熱量計算"],
+    "空調計算（負荷・空気線図・冷凍サイクル）": ["室湿熱・空気調和・熱量計算"],
+    "給水・給湯": ["給排水・設備"],
+    "排水・通気・衛生器具": ["給排水・設備"],
+    "建築物衛生法・衛生基準": ["建築物衛生管理"],
+    "レジオネラ・感染症": ["建築物衛生管理", "浮遊微生物検査"],
+    "水質指標・試験方法・測定": ["水質指標", "水質測定方法"],
+    "環境基準・排水基準": ["水質指標", "水質測定方法"],
+    "活性汚泥・生物処理": ["活性汚泥・汚泥発生量・SVI", "生物処理・活性汚泥", "生物処理微生物"],
+    "BOD負荷・汚泥計算": ["活性汚泥・汚泥発生量・SVI", "沈殿層における汚泥沈降様式", "水質指標"],
+    "高度処理・消毒": ["硝化・脱窒反応の化学方程式", "硝化・脱窒反応", "浄化槽・高度処理"],
+    "浄化槽": ["浄化槽の構造・法規", "浄化槽・高度処理"],
+    "最終処分場・浸出水": ["最終処分場・浸出水量・浸出係数", "最終処分場"],
+    "焼却・熱回収・ダイオキシン": ["ダイオキシン・焼却", "ごみ焼却・理論酸素量・低位発熱量"],
+    "ごみ質・測定分析・燃焼計算": ["ごみ焼却・理論酸素量・低位発熱量", "ごみ性質・発熱量"],
+    "廃棄物処理法・制度・処理施設・その他": ["廃棄物処理法(廃掃法)"],
+    "リサイクル・循環型社会": ["循環型社会基本法", "リサイクル・法規"],
+    "産業廃棄物管理票（マニフェスト）": ["マニフェスト制度"],
+    "災害廃棄物・指定廃棄物": ["廃棄物処理法(廃掃法)"],
+    "排出量・処理状況の統計": ["循環型社会基本法"]
+  };
+  const NOTE_TITLE_KEYS = ["計算分野・テーマ", "サブジャンル", "項目・管理対象"];
+  const QUESTION_ID_PATTERN = /(?:H|R)\d{1,2}(?:本|再)?-\d{2}/g;
+
+  function parseMatome(arrayBuffer) {
+    const workbook = XLSX.read(arrayBuffer, { type: "array" });
+    const notes = [];
+    workbook.SheetNames.forEach(sheetName => {
+      if (sheetName.includes("目次") || sheetName.includes("ガイド") || sheetName.includes("過去問テーマ")) return;
+      const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "" });
+      const headerIndex = rows.slice(0, 5).findIndex(r => r.filter(c => String(c).trim() !== "").length >= 2);
+      if (headerIndex < 0) return;
+      const headers = rows[headerIndex].map(h => String(h).trim());
+      const titleKey = NOTE_TITLE_KEYS.find(k => headers.includes(k)) || headers[1];
+      rows.slice(headerIndex + 1).forEach(r => {
+        const row = {};
+        headers.forEach((h, i) => { if (h) row[h] = String(r[i] || "").trim(); });
+        const values = Object.values(row);
+        if (!values.some(v => v !== "")) return;
+        notes.push({
+          sheet: sheetName,
+          headers: headers.filter(h => h),
+          titleKey: titleKey,
+          title: row[titleKey] || "",
+          row: row,
+          refs: new Set(values.join(" ").match(QUESTION_ID_PATTERN) || []),
+          isStandard: sheetName.includes("基準値") || sheetName.includes("数値")
+        });
+      });
+    });
+    return notes;
+  }
+
+  function loadMatomeNotes() {
+    if (matomeNotes) return Promise.resolve(matomeNotes);
+    if (!matomeLoading) {
+      matomeLoading = fetch(MATOME_FILE, { cache: 'no-cache' })
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })
+        .then(buf => { matomeNotes = parseMatome(buf); return matomeNotes; })
+        .catch(e => { matomeLoading = null; throw e; });
+    }
+    return matomeLoading;
+  }
+
+  // 関連ノート：①まとめノートの「過去問参照ID」②細目の対応表 ③数値基準の項目名が問題文に出てくるもの
+  function getRelatedNotes(q) {
+    if (!matomeNotes || !q) return [];
+    const out = [];
+    const seen = new Set();
+    const add = (note, why) => { if (!seen.has(note)) { seen.add(note); out.push({ note, why }); } };
+
+    if (q.qid) matomeNotes.forEach(n => { if (n.refs.has(q.qid)) add(n, 'この問題が出題例'); });
+    (TOPIC_NOTE_MAP[q.topic] || []).forEach(t => matomeNotes.forEach(n => { if (!n.isStandard && n.title.startsWith(t)) add(n, '同じ分野'); }));
+
+    const text = [q.question, ...(q.options || [])].join(' ');
+    matomeNotes.forEach(n => {
+      if (!n.isStandard) return;
+      const term = n.title.split(/[\s(（]/)[0];
+      if (term.length >= 2 && text.includes(term)) add(n, '問題文のキーワード');
+    });
+    return out.slice(0, 6);
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function renderNoteCard(item) {
+    const n = item.note;
+    let rows = '';
+    n.headers.forEach(h => {
+      const v = n.row[h];
+      if (!v || h === n.titleKey) return;
+      rows += `<tr><th>${escapeHtml(h)}</th><td>${escapeHtml(v).replace(/\n/g, '<br>')}</td></tr>`;
+    });
+    const link = `viewer.html?sheet=${encodeURIComponent(n.sheet)}&q=${encodeURIComponent(n.title)}`;
+    return `<div class="note-card-mini">
+      <div class="nc-sheet">${escapeHtml(n.sheet.replace(/^[①-⑨0-9]+_/, ''))}</div>
+      <div class="nc-title">${escapeHtml(n.title || '（無題）')}<span class="nc-why">${item.why}</span></div>
+      <table>${rows}</table>
+      <a href="${link}" target="_blank" rel="noopener">まとめノートで開く ↗</a>
+    </div>`;
+  }
+
+  window.openNoteModal = async function(q) {
+    q = q || filteredQuestions[curIdx];
+    const modal = document.getElementById('note-modal');
+    const body = document.getElementById('note-modal-body');
+    document.getElementById('note-modal-qid').textContent = [q.qid, q.topic || q.subgenre].filter(Boolean).join(' / ');
+    body.innerHTML = '<div class="empty-msg">読み込み中...</div>';
+    modal.classList.add('show');
+
+    try {
+      await loadMatomeNotes();
+    } catch (e) {
+      body.innerHTML = '<div class="empty-msg">まとめノート（matome.xlsx）を読み込めませんでした。</div>';
+      return;
+    }
+    const related = getRelatedNotes(q);
+    body.innerHTML = related.length
+      ? related.map(renderNoteCard).join('')
+      : '<div class="empty-msg">この問題に関連するノートは見つかりませんでした。<br><a href="viewer.html" target="_blank" rel="noopener">まとめノートを開く ↗</a></div>';
+    if (window.MathJax && window.MathJax.typesetPromise) {
+      MathJax.typesetPromise([body]).catch(err => console.error("MathJax error:", err));
+    }
+  };
+
+  window.closeNoteModal = function() {
+    document.getElementById('note-modal').classList.remove('show');
+  };
+
+  // 解答後の「まとめノート」ボタン（関連ノートの件数を表示。未読込なら読み込み後に更新）
+  function updateNoteButton(btn, q) {
+    const apply = () => {
+      const n = getRelatedNotes(q).length;
+      btn.style.display = n > 0 ? 'block' : 'none';
+      btn.textContent = `📚 まとめノートの関連公式・知識を見る（${n}件）`;
+    };
+    if (matomeNotes) { apply(); return; }
+    btn.style.display = 'none';
+    loadMatomeNotes().then(apply).catch(() => {});
   }
 
   // --- 腕試しモード（本番形式 模擬試験） ---
@@ -2184,6 +2425,7 @@ ${refText}
     document.getElementById('exp-box').classList.remove('show');
     document.getElementById('ai-explain-result').style.display = 'none';
     document.getElementById('ai-explain-btn').style.display = 'none';
+    document.getElementById('note-link-btn').style.display = 'none';
     
     const nextBtn = document.getElementById('next-btn');
     
@@ -2195,9 +2437,12 @@ ${refText}
       renderContent(q.explanation, 'exp-text');
       document.getElementById('exp-box').classList.add('show');
       
-      if (!isAiMode || isMockMode) {
+      if (savedExplanations[q.id]) {
+        showAIExplanation(q);
+      } else if (!isAiMode || isMockMode) {
         document.getElementById('ai-explain-btn').style.display = 'block';
       }
+      updateNoteButton(document.getElementById('note-link-btn'), q);
       
       nextBtn.disabled = false;
       nextBtn.style.background = ''; 
@@ -2271,29 +2516,9 @@ ${refText}
     renderQuestion(); 
   }
 
-  window.askAIExplain = async function(useLiteModel = false) {
+  // AI詳細解説を生成する（混雑時は軽量モデルに切り替え）
+  async function fetchAIExplanation(q, useLiteModel = false) {
     const apiKey = localStorage.getItem('my_gemini_api_key');
-    if (!apiKey) {
-      alert("AI解説機能を使用するには、スタート画面の設定エリアに「Gemini APIキー」を入力して保存してください。");
-      return;
-    }
-
-    const q = filteredQuestions[curIdx];
-    const btn = document.getElementById("ai-explain-btn");
-    const loading = document.getElementById("ai-explain-loading");
-    const resultBox = document.getElementById("ai-explain-result");
-    const resultText = document.getElementById("ai-explain-text");
-
-    btn.style.display = "none";
-    loading.style.display = "block";
-    
-    const loadingMsg = document.getElementById("ai-explain-loading-msg");
-    if (useLiteModel) {
-      loadingMsg.innerHTML = "標準モデルが混雑しているため、<br>軽量モデル(Lite)で解説を生成しています...";
-    } else {
-      loadingMsg.innerHTML = "AIが詳細な解説を生成しています...";
-    }
-    
     const modelName = useLiteModel ? 'gemini-3.5-flash-lite' : 'gemini-3.5-flash';
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
@@ -2313,36 +2538,58 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
 【正解】
 選択肢 ${q.answer + 1}`;
 
-    const payload = {
-      contents: [{ parts: [{ text: prompt }] }]
-    };
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      if ((response.status === 429 || response.status === 503) && !useLiteModel) {
+        console.warn(`API制限または高負荷(${response.status})を検知。Liteモデルで解説を生成します...`);
+        return fetchAIExplanation(q, true);
+      }
+      throw new Error(`[${response.status}] ${result.error?.message || "通信エラー"}`);
+    }
+    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error("AIの応答が空でした");
+    return { text, lite: useLiteModel };
+  }
+
+  function showAIExplanation(q) {
+    const saved = savedExplanations[q.id];
+    if (!saved) return;
+    document.getElementById('ai-explain-btn').style.display = 'none';
+    document.getElementById('ai-explain-result').style.display = 'block';
+    document.getElementById('ai-saved-meta').innerHTML = `💾 保存済み ${saved.date}<button class="ai-regen-btn" onclick="regenerateAIExplain()">作り直す</button>`;
+    renderContent(explanationMarkdown(saved), 'ai-explain-text');
+  }
+
+  window.regenerateAIExplain = function() {
+    if (confirm("AI解説を作り直しますか？\n（保存済みの解説は新しい解説に置き換わります）")) askAIExplain();
+  };
+
+  window.askAIExplain = async function() {
+    if (!localStorage.getItem('my_gemini_api_key')) {
+      alert("AI解説機能を使用するには、スタート画面の設定エリアに「Gemini APIキー」を入力して保存してください。");
+      return;
+    }
+
+    const q = filteredQuestions[curIdx];
+    const btn = document.getElementById("ai-explain-btn");
+    const loading = document.getElementById("ai-explain-loading");
+    btn.style.display = "none";
+    document.getElementById("ai-explain-result").style.display = "none";
+    document.getElementById("ai-explain-loading-msg").innerHTML = "AIが詳細な解説を生成しています...";
+    loading.style.display = "block";
 
     try {
-      const response = await fetch(apiUrl, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(payload) 
-      });
-      
-      const result = await response.json();
-      
-      if (!response.ok) {
-        if ((response.status === 429 || response.status === 503) && !useLiteModel) {
-            console.warn(`API制限または高負荷(${response.status})を検知。Liteモデルで解説を生成します...`);
-            return askAIExplain(true); 
-        }
-        throw new Error(`[${response.status}] ${result.error?.message || "通信エラー"}`);
-      }
-
-      if (result.candidates && result.candidates[0].content.parts[0].text) {
-        let aiText = result.candidates[0].content.parts[0].text;
-        
-        loading.style.display = "none";
-        resultBox.style.display = "block";
-        
-        const textToRender = useLiteModel ? `**[Liteモデルによる解説]**\n\n${aiText}` : aiText;
-        renderContent(textToRender, 'ai-explain-text');
-      }
+      const r = await fetchAIExplanation(q);
+      saveExplanation(q, r.text, r.lite);
+      loading.style.display = "none";
+      // 生成中に別の問題へ移動していたら表示しない（保存はする）
+      if (filteredQuestions[curIdx] === q) showAIExplanation(q);
     } catch(e) {
       console.error("AI解説生成エラー", e);
       loading.style.display = "none";
@@ -2564,6 +2811,43 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
     }
   };
 
+  // 結果一覧の各問題に、保存済みAI解説（または生成ボタン）とまとめノートへのボタンを付ける
+  function renderHistoryExtras(box, q) {
+    box.innerHTML = '';
+    const saved = savedExplanations[q.id];
+    if (saved) {
+      const aiBox = document.createElement('div');
+      aiBox.className = 'hist-ai-box md-content';
+      aiBox.innerHTML = `<div class="ai-exp-title">✨ AI詳細解説<span class="ai-saved-meta">💾 ${saved.date}</span></div>` +
+        DOMPurify.sanitize(marked.parse(explanationMarkdown(saved)));
+      box.appendChild(aiBox);
+      if (window.MathJax && window.MathJax.typesetPromise) MathJax.typesetPromise([aiBox]).catch(err => console.error(err));
+    } else if (!String(q.year).startsWith('AI') && localStorage.getItem('my_gemini_api_key')) {
+      const btn = document.createElement('button');
+      btn.className = 'hist-ai-btn';
+      btn.textContent = '✨ AI詳細解説を生成して保存';
+      btn.onclick = async () => {
+        btn.disabled = true;
+        btn.textContent = '生成中...';
+        try {
+          const r = await fetchAIExplanation(q);
+          saveExplanation(q, r.text, r.lite);
+          renderHistoryExtras(box, q);
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = '✨ AI詳細解説を生成して保存';
+          alert(`AI解説の生成に失敗しました。\n\n【詳細】\n${e.message}`);
+        }
+      };
+      box.appendChild(btn);
+    }
+    const noteBtn = document.createElement('button');
+    noteBtn.className = 'note-link-btn';
+    noteBtn.onclick = () => openNoteModal(q);
+    box.appendChild(noteBtn);
+    updateNoteButton(noteBtn, q);
+  }
+
   window.renderHistoryUI = function(questions = null) {
     if (!questions) {
         questions = filteredQuestions;
@@ -2637,6 +2921,9 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
       
       const expContainer = item.querySelector('.hist-exp-content');
       expContainer.innerHTML = DOMPurify.sanitize(marked.parse(q.explanation));
+      const extras = document.createElement('div');
+      expContainer.after(extras);
+      renderHistoryExtras(extras, q);
     });
     
     if (window.MathJax && window.MathJax.typesetPromise) {

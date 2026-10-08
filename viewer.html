@@ -346,7 +346,15 @@
           throw new Error("有効なデータシートが見つかりませんでした。");
       }
 
-      initUI(firstValidSheet);
+      // 演習アプリからのリンク（viewer.html?sheet=シート名&q=見出し）で該当ノートを開く
+      const params = new URLSearchParams(location.search);
+      const wantSheet = params.get('sheet');
+      const wantQuery = params.get('q');
+      initUI(wantSheet && sheetDataMap[wantSheet] ? wantSheet : firstValidSheet);
+      if (wantQuery) {
+          document.getElementById('keyword-filter').value = wantQuery;
+          renderNotes();
+      }
   }
 
   function initUI(initialSheet) {
