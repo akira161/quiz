@@ -217,7 +217,7 @@
   } catch(e) {}
 
   const EXCEL_FILE = "matome.xlsx";
-  const EXCEL_DB_FILE = "Sanitary_Engineering_Exam_DB_v28.xlsx"; // 過去問DBも参照
+  const EXCEL_DB_FILE = "Sanitary_Engineering_Exam_DB_v29.xlsx"; // 過去問DBも参照
   let sheetDataMap = {}; 
   let currentSheetName = "";
   let currentGenres = new Set();
@@ -251,6 +251,7 @@
                     qNum: String(row['設問番号'] || `Q${i+1}`).trim(),
                     genre: String(row['大分類(ブロック)'] || '').trim(),
                     subgenre: String(row['サブジャンル'] || '').trim(),
+                    topic: String(row['出題論点（細目）'] || '').trim(),
                     question: String(row['問題文'] || '').trim(),
                     theme: String(row['問題のテーマ・内容概要'] || '').trim(),
                     options: options,
@@ -416,10 +417,11 @@
               genreTerms.forEach(term => {
                   if (q.genre.includes(term)) score += 3;
                   if (q.subgenre.includes(term)) score += 4;
+                  if (q.topic.includes(term)) score += 4;
                   if (q.theme.includes(term)) score += 2;
               });
 
-              if (genre && q.subgenre === genre) score += 5;
+              if (genre && (q.subgenre === genre || q.topic === genre)) score += 5;
               if (genre && q.genre === genre) score += 3;
               
               return { q, score };

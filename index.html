@@ -317,7 +317,7 @@
       <h3>1. 基本的な使い方（過去問演習）</h3>
       <p>このアプリは技術士 衛生工学部門の過去問を効率よく学習するためのツールです。</p>
       <ul>
-        <li><b>フィルター機能:</b> 「年度」「大分類」「小分類」から解きたいジャンルを絞り込めます。</li>
+        <li><b>フィルター機能:</b> 「年度」「大分類」「小分類」「出題論点（細目）」から解きたいジャンルを絞り込めます。</li>
         <li><b>弱点克服フィルター:</b> 「未回答の問題」や「過去に間違えた問題」だけを優先して出題し、効率的な復習が可能です。</li>
         <li><b>傾向重視:</b> 出題順序を「傾向重視」にすると、近年よく出題されるテーマが優先的に出題されます。</li>
       </ul>
@@ -416,6 +416,11 @@
       <div class="filter-group" style="grid-column: 1 / -1;">
         <label for="subgenre-filter">小分類（サブジャンル）</label>
         <select id="subgenre-filter" class="filter-select" onchange="updateFilterUI()"></select>
+      </div>
+
+      <div class="filter-group" style="grid-column: 1 / -1;">
+        <label for="topic-filter">出題論点（細目）</label>
+        <select id="topic-filter" class="filter-select" onchange="updateFilterUI()"></select>
       </div>
 
       <div style="display: flex; gap: 12px; grid-column: 1 / -1;">
@@ -588,15 +593,17 @@
 </div>
 
 <script>
-  const EXCEL_FILE_NAME = "Sanitary_Engineering_Exam_DB_v28.xlsx";
+  const EXCEL_FILE_NAME = "Sanitary_Engineering_Exam_DB_v29.xlsx";
   const SHEET_NAME = "過去問マスターDB";
 
   let allQuestions = [];
   let masterYears = [];
   let masterGenres = [];
-  let genreToSubgenres = {}; 
-  
-  let subgenreTrendScores = {}; 
+  let genreToSubgenres = {};
+  let subgenreToTopics = {};
+
+  // 頻出度は細目（旧サブジャンル33区分）単位で集計する
+  let topicTrendScores = {};
   let radarChartInstance = null;
 
   let currentTargetQuestions = [];
@@ -897,6 +904,7 @@
 
       const block = String(row['大分類(ブロック)'] || '').trim();
       const sub = String(row['サブジャンル'] || '').trim();
+      const topic = String(row['出題論点（細目）'] || '').trim() || sub;
       const qNumStr = String(row['設問番号'] || `Q${index+1}`).trim();
       
       const options = [];
@@ -927,6 +935,7 @@
         qNum: qNumStr,
         genre: block,
         subgenre: sub,
+        topic: topic,
         question: String(row['問題文'] || '').trim(),
         options: options,
         answer: ansIdx,
@@ -948,7 +957,10 @@
   function initApp() {
     const ySet = new Set();
     const gSet = new Set();
-    const subgenreYears = {};
+    const topicYears = {};
+    genreToSubgenres = {};
+    subgenreToTopics = {};
+    topicTrendScores = {};
 
     allQuestions.forEach(q => {
       if(q.year) ySet.add(q.year);
@@ -957,29 +969,33 @@
         if(!genreToSubgenres[q.genre]) genreToSubgenres[q.genre] = new Set();
         if(q.subgenre) genreToSubgenres[q.genre].add(q.subgenre);
       }
-      if(q.subgenre && q.yearNum > 0) {
-          if(!subgenreYears[q.subgenre]) subgenreYears[q.subgenre] = [];
-          subgenreYears[q.subgenre].push(q.yearNum);
+      if(q.subgenre && q.topic) {
+        if(!subgenreToTopics[q.subgenre]) subgenreToTopics[q.subgenre] = new Set();
+        subgenreToTopics[q.subgenre].add(q.topic);
+      }
+      if(q.topic && q.yearNum > 0) {
+          if(!topicYears[q.topic]) topicYears[q.topic] = [];
+          topicYears[q.topic].push(q.yearNum);
       }
     });
 
     let maxYearNum = Math.max(...allQuestions.map(q => q.yearNum).filter(n => n > 0));
     let rawScores = {};
-    
-    Object.keys(subgenreYears).forEach(sub => {
+
+    Object.keys(topicYears).forEach(topic => {
         let score = 0;
-        subgenreYears[sub].forEach(y => {
+        topicYears[topic].forEach(y => {
             let diff = maxYearNum - y;
-            score += getYearWeight(diff); 
+            score += getYearWeight(diff);
         });
-        rawScores[sub] = score;
+        rawScores[topic] = score;
     });
 
     let maxRawScore = Math.max(...Object.values(rawScores));
     if (maxRawScore === 0) maxRawScore = 1;
 
-    Object.keys(rawScores).forEach(sub => {
-        let score = rawScores[sub];
+    Object.keys(rawScores).forEach(topic => {
+        let score = rawScores[topic];
         let ratio = score / maxRawScore;
         
         let level = 1;
@@ -988,7 +1004,7 @@
         else if (ratio >= 0.4) level = 3;
         else if (ratio >= 0.2) level = 2;
         
-        subgenreTrendScores[sub] = { raw: score, level: level };
+        topicTrendScores[topic] = { raw: score, level: level };
     });
 
     const sortedQuestionsByYear = [...allQuestions].sort((a, b) => b.yearNum - a.yearNum);
@@ -1013,11 +1029,13 @@
     const ySelect = document.getElementById('year-filter');
     const gSelect = document.getElementById('genre-filter');
     const sSelect = document.getElementById('subgenre-filter');
+    const tSelect = document.getElementById('topic-filter');
     const mSelect = document.getElementById('memory-filter');
-    
+
     const currentYear = ySelect.value;
     const currentGenre = gSelect.value;
-    let currentSubgenre = sSelect.value || 'all'; 
+    let currentSubgenre = sSelect.value || 'all';
+    let currentTopic = tSelect.value || 'all';
     const currentMemory = mSelect.value;
     const currentKeyword = document.getElementById('keyword-filter').value.toLowerCase().trim();
 
@@ -1036,13 +1054,27 @@
       sSelect.value = 'all'; currentSubgenre = 'all';
     }
 
-    const fKw = (q) => currentKeyword === '' || 
-                       q.question.toLowerCase().includes(currentKeyword) || 
-                       q.explanation.toLowerCase().includes(currentKeyword) || 
+    tSelect.innerHTML = '<option value="all">すべての細目</option>';
+    let availableTopics = new Set();
+    const subgenresForTopics = currentSubgenre !== 'all' ? [currentSubgenre] : Array.from(availableSubgenres);
+    subgenresForTopics.forEach(s => (subgenreToTopics[s] || new Set()).forEach(t => availableTopics.add(t)));
+    Array.from(availableTopics).sort().forEach(t => tSelect.add(new Option(t, t)));
+
+    if (availableTopics.has(currentTopic)) {
+      tSelect.value = currentTopic;
+    } else {
+      tSelect.value = 'all'; currentTopic = 'all';
+    }
+
+    const fKw = (q) => currentKeyword === '' ||
+                       q.question.toLowerCase().includes(currentKeyword) ||
+                       q.explanation.toLowerCase().includes(currentKeyword) ||
+                       (q.topic || '').toLowerCase().includes(currentKeyword) ||
                        q.options.some(o => o.toLowerCase().includes(currentKeyword));
     const fY = (q, y) => y === 'all' || q.year === y;
     const fG = (q, g) => g === 'all' || q.genre === g;
     const fS = (q, s) => s === 'all' || q.subgenre === s;
+    const fT = (q, t) => t === 'all' || q.topic === t;
     
     const fMem = (q) => {
       if (currentMemory === 'all') return true;
@@ -1053,7 +1085,7 @@
       return true;
     };
 
-    const baseForY = allQuestions.filter(q => fG(q, currentGenre) && fS(q, currentSubgenre) && fKw(q) && fMem(q));
+    const baseForY = allQuestions.filter(q => fG(q, currentGenre) && fS(q, currentSubgenre) && fT(q, currentTopic) && fKw(q) && fMem(q));
     const countsY = {}; baseForY.forEach(q => { countsY[q.year] = (countsY[q.year] || 0) + 1; });
     ySelect.options[0].text = `すべての年度 (${baseForY.length}問)`;
     for (let i = 1; i < ySelect.options.length; i++) {
@@ -1061,7 +1093,7 @@
       ySelect.options[i].text = `${val} (${c}問)`; ySelect.options[i].disabled = (c === 0);
     }
 
-    const baseForG = allQuestions.filter(q => fY(q, currentYear) && fS(q, currentSubgenre) && fKw(q) && fMem(q));
+    const baseForG = allQuestions.filter(q => fY(q, currentYear) && fS(q, currentSubgenre) && fT(q, currentTopic) && fKw(q) && fMem(q));
     const countsG = {}; baseForG.forEach(q => { countsG[q.genre] = (countsG[q.genre] || 0) + 1; });
     gSelect.options[0].text = `すべての大分類 (${baseForG.length}問)`;
     for (let i = 1; i < gSelect.options.length; i++) {
@@ -1069,7 +1101,7 @@
       gSelect.options[i].text = `${val} (${c}問)`; gSelect.options[i].disabled = (c === 0);
     }
 
-    const baseForS = allQuestions.filter(q => fY(q, currentYear) && fG(q, currentGenre) && fKw(q) && fMem(q));
+    const baseForS = allQuestions.filter(q => fY(q, currentYear) && fG(q, currentGenre) && fT(q, currentTopic) && fKw(q) && fMem(q));
     const countsS = {}; baseForS.forEach(q => { countsS[q.subgenre] = (countsS[q.subgenre] || 0) + 1; });
     sSelect.options[0].text = `すべての小分類 (${baseForS.length}問)`;
     for (let i = 1; i < sSelect.options.length; i++) {
@@ -1077,7 +1109,15 @@
       sSelect.options[i].text = `${val} (${c}問)`; sSelect.options[i].disabled = (c === 0);
     }
 
-    currentTargetQuestions = allQuestions.filter(q => fY(q, currentYear) && fG(q, currentGenre) && fS(q, currentSubgenre) && fKw(q) && fMem(q));
+    const baseForT = allQuestions.filter(q => fY(q, currentYear) && fG(q, currentGenre) && fS(q, currentSubgenre) && fKw(q) && fMem(q));
+    const countsT = {}; baseForT.forEach(q => { countsT[q.topic] = (countsT[q.topic] || 0) + 1; });
+    tSelect.options[0].text = `すべての細目 (${baseForT.length}問)`;
+    for (let i = 1; i < tSelect.options.length; i++) {
+      const val = tSelect.options[i].value; const c = countsT[val] || 0;
+      tSelect.options[i].text = `${val} (${c}問)`; tSelect.options[i].disabled = (c === 0);
+    }
+
+    currentTargetQuestions = allQuestions.filter(q => fY(q, currentYear) && fG(q, currentGenre) && fS(q, currentSubgenre) && fT(q, currentTopic) && fKw(q) && fMem(q));
     
     const countEl = document.getElementById('target-count');
     const startBtn = document.getElementById('start-btn');
@@ -1118,7 +1158,7 @@
     if (count >= pool.length) return shuffleArray([...pool]);
 
     let weightedPool = pool.map(q => {
-      let scoreObj = subgenreTrendScores[q.subgenre];
+      let scoreObj = topicTrendScores[q.topic];
       let weight = scoreObj ? scoreObj.raw : 1;
       return { q: q, weight: weight };
     });
@@ -1477,7 +1517,8 @@
     
     const genre = document.getElementById('genre-filter').value;
     const subgenre = document.getElementById('subgenre-filter').value;
-    
+    const topic = document.getElementById('topic-filter').value;
+
     const apiKey = localStorage.getItem('my_gemini_api_key');
     
     const modelName = useLiteModel ? 'gemini-3.5-flash-lite' : 'gemini-3.5-flash';
@@ -1486,7 +1527,9 @@
     let topicHint = "衛生工学全般";
     if (genre && genre !== "all") {
         topicHint = `衛生工学部門の「${genre}」分野全般`;
-        if (subgenre && subgenre !== "all") {
+        if (topic && topic !== "all") {
+            topicHint += `（特に「${topic}」にフォーカス）`;
+        } else if (subgenre && subgenre !== "all") {
             topicHint += `（特に「${subgenre}」にフォーカス）`;
         }
     }
@@ -1562,6 +1605,7 @@ ${refText}
               qNum: `Q${idx+1}`,
               genre: genre !== "all" ? genre : "AI総合",
               subgenre: subgenre !== "all" ? subgenre : "網羅的",
+              topic: topic !== "all" ? topic : "",
               question: qData.question,
               options: qData.options,
               answer: qData.answer,
@@ -1591,7 +1635,9 @@ ${refText}
     if (isMockMode) updateMockStatus();
 
     document.getElementById('prog-label').textContent = isMockMode ? `問 ${curIdx + 1}` : `問 ${curIdx + 1} / ${filteredQuestions.length}`;
-    document.getElementById('cat-label').textContent = `${q.genre} > ${q.subgenre}`;
+    document.getElementById('cat-label').textContent = (q.topic && q.topic !== q.subgenre)
+      ? `${q.genre} > ${q.subgenre} > ${q.topic}`
+      : `${q.genre} > ${q.subgenre}`;
     
     // 問題文をMarkdown/LaTeXとしてパース
     const qTextEl = document.getElementById('q-text');
@@ -1613,8 +1659,8 @@ ${refText}
     }
 
     const trendLabel = document.getElementById('trend-label');
-    if (!isAiMode && !isMockMode && q.subgenre && subgenreTrendScores[q.subgenre]) {
-        const lv = subgenreTrendScores[q.subgenre].level;
+    if (!isAiMode && !isMockMode && q.topic && topicTrendScores[q.topic]) {
+        const lv = topicTrendScores[q.topic].level;
         const stars = '★'.repeat(lv) + '☆'.repeat(5 - lv);
         trendLabel.textContent = `頻出度 ${stars}`;
         trendLabel.className = 'trend-badge'; 
