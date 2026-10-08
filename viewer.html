@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>衛生工学 まとめノート</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#4338ca">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
@@ -216,6 +220,13 @@
     }
   } catch(e) {}
 
+  // オフライン対応（Service Worker の登録）
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(e => console.warn('Service Worker 登録失敗:', e));
+    });
+  }
+
   const EXCEL_FILE = "matome.xlsx";
   const EXCEL_DB_FILE = "Sanitary_Engineering_Exam_DB_v30.xlsx"; // 過去問DBも参照
   let sheetDataMap = {}; 
@@ -225,7 +236,6 @@
   let pastExamQuestions = []; // 過去問保存用
 
   window.onload = async () => {
-    const timestamp = new Date().getTime();
     
     // 追加: 過去問DBの非同期読み込み (まとめノートを読みながら裏で準備)
     fetch(EXCEL_DB_FILE, { cache: 'no-cache' }).then(res => {
@@ -262,7 +272,7 @@
     }).catch(e => console.warn("過去問DB読み込みスキップ:", e));
 
     try {
-      const response = await fetch(`${EXCEL_FILE}?t=${timestamp}`);
+      const response = await fetch(EXCEL_FILE, { cache: 'no-cache' });
       if (!response.ok) throw new Error("File not found or access denied.");
       const arrayBuffer = await response.arrayBuffer();
       processExcelData(arrayBuffer);

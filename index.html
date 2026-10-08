@@ -6,6 +6,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>技術士 衛生工学 過去問演習</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#4338ca">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -336,6 +340,7 @@
 <body>
 
 <div class="container" id="app-container">
+  <div id="offline-badge" style="display: none; background: var(--trend-bg); color: var(--trend-text); font-size: 0.8rem; font-weight: bold; text-align: center; padding: 6px; border-radius: 8px; margin-bottom: 12px;">📴 オフラインで動作中（過去問演習・模試・まとめノートは使えます。AI機能は通信が必要です）</div>
   
   <div class="top-bar">
     <button class="nav-link-btn" onclick="openHelp()" title="使い方・API設定ガイド">❓ 使い方・設定</button>
@@ -737,7 +742,23 @@
     savedSession: null 
   };
   
+  // オフライン対応（Service Worker の登録）
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(e => console.warn('Service Worker 登録失敗:', e));
+    });
+  }
+
+  // オフライン表示（AI機能は通信が必要）
+  function updateOnlineBadge() {
+    const el = document.getElementById('offline-badge');
+    if (el) el.style.display = navigator.onLine ? 'none' : 'block';
+  }
+  window.addEventListener('online', updateOnlineBadge);
+  window.addEventListener('offline', updateOnlineBadge);
+
   window.onload = async () => {
+    updateOnlineBadge();
     try {
       await loadExcelData();
       finishInit();
