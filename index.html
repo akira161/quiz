@@ -1404,7 +1404,7 @@
     "災害廃棄物・指定廃棄物": ["廃棄物処理法(廃掃法)"],
     "排出量・処理状況の統計": ["循環型社会基本法"]
   };
-  const NOTE_TITLE_KEYS = ["計算分野・テーマ", "サブジャンル", "項目・管理対象"];
+  const NOTE_TITLE_KEYS = ["計算分野・テーマ", "サブジャンル", "項目・管理対象", "項目・テーマ"];
   const QUESTION_ID_PATTERN = /(?:H|R)\d{1,2}(?:本|再)?-\d{2}/g;
 
   function parseMatome(arrayBuffer) {
@@ -1429,7 +1429,8 @@
           title: row[titleKey] || "",
           row: row,
           refs: new Set(values.join(" ").match(QUESTION_ID_PATTERN) || []),
-          isStandard: sheetName.includes("基準値") || sheetName.includes("数値")
+          isStandard: sheetName.includes("基準値") || sheetName.includes("数値"),
+          isTrend: sheetName.includes("最新動向")
         });
       });
     });
@@ -1447,7 +1448,7 @@
     return matomeLoading;
   }
 
-  // 関連ノート：①まとめノートの「過去問参照ID」②細目の対応表 ③数値基準の項目名が問題文に出てくるもの
+  // 関連ノート：①まとめノートの「過去問参照ID」②今年の最新動向（関連する細目）③細目の対応表 ④数値基準の項目名が問題文に出てくるもの
   function getRelatedNotes(q) {
     if (!matomeNotes || !q) return [];
     const out = [];
@@ -1455,6 +1456,9 @@
     const add = (note, why) => { if (!seen.has(note)) { seen.add(note); out.push({ note, why }); } };
 
     if (q.qid) matomeNotes.forEach(n => { if (n.refs.has(q.qid)) add(n, 'この問題が出題例'); });
+    if (q.topic) matomeNotes.forEach(n => {
+      if (n.isTrend && (n.row['関連する細目'] || '').split('\n').map(t => t.trim()).includes(q.topic)) add(n, '今年の最新動向');
+    });
     (TOPIC_NOTE_MAP[q.topic] || []).forEach(t => matomeNotes.forEach(n => { if (!n.isStandard && n.title.startsWith(t)) add(n, '同じ分野'); }));
 
     const text = [q.question, ...(q.options || [])].join(' ');
@@ -1463,7 +1467,16 @@
       const term = n.title.split(/[\s(（]/)[0];
       if (term.length >= 2 && text.includes(term)) add(n, '問題文のキーワード');
     });
-    return out.slice(0, 6);
+    return out.slice(0, 8);
+  }
+
+  // AI予想問題の生成用：まとめノート「今年の最新動向」から該当分野の内容をプロンプトに添える
+  function getTrendPrompt(genre) {
+    if (!matomeNotes) return "";
+    const rows = matomeNotes.filter(n => n.isTrend && (!genre || genre === "all" || n.row['分野・ブロック'] === genre));
+    if (rows.length === 0) return "";
+    const lines = rows.map(n => `■${n.title}（${n.row['時点・根拠'] || ''}）\n${n.row['最新の数値・内容'] || ''}`).join('\n');
+    return `\n\n【今年おさえるべき最新動向（統計・法改正）】\n${lines}\n\n作成する問題のうち1問程度は、上記の最新動向を踏まえた問題にしてください。数値や施行時期は上記の内容を正として使い、上記にない最新の数値を推測で作らないでください。`;
   }
 
   function escapeHtml(str) {
@@ -1799,7 +1812,7 @@
     const prompt = `あなたは技術士（衛生工学部門）の試験委員です。「${genre}」分野について、本番試験と同等の難易度と形式で、五肢択一問題を【${count}問】作成してください。
 図表を使わずテキストのみで解答できる問題にし、JSONフォーマット（{"questions": [{"question": "...", "options": ["...","...","...","...","..."], "answer": 0, "explanation": "..."}]}）で出力してください。
 問題文や選択肢は、過去問と全く同じにならないよう工夫してください。
-※重要：問題文、選択肢、解説にはMarkdown記法（見出し、太字など）を使い、数式が含まれる場合は必ずLaTeX記法（インラインは $...$ 、ブロックは $$...$$）を使用してください。${avoidPrompt}`;
+※重要：問題文、選択肢、解説にはMarkdown記法（見出し、太字など）を使い、数式が含まれる場合は必ずLaTeX記法（インラインは $...$ 、ブロックは $$...$$）を使用してください。${getTrendPrompt(genre)}${avoidPrompt}`;
 
     const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { response_mime_type: "application/json" } };
     
@@ -2261,7 +2274,7 @@
 ${topicHint}
 
 【過去の出題例（参考）】
-${refText}
+${refText}${getTrendPrompt(genre)}
 
 【指示】
 ・過去問の単なるコピーではなく、関連知識を組み合わせたオリジナル問題にすること。
