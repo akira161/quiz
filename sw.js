@@ -1,50 +1,14 @@
 // オフライン対応（Service Worker）
-// - アプリ本体・過去問DB・まとめノート・図: ネットワーク優先（最新を取得し、つながらない時は保存分を使う）
+// - アプリ本体・過去問DB・まとめノート: ネットワーク優先（最新を取得し、つながらない時は保存分を使う）
+// - 問題画像: 保存分を優先
 // - CDNのライブラリ: 保存分を優先（バージョン固定のため）
 // - Gemini API: 保存しない（常に通信）
-// 過去問DBのファイル名を変えたら、PRECACHE も合わせて更新し、CACHE_NAME の番号を上げる
-const CACHE_NAME = 'quiz-cache-v1';
+// 先に保存する一覧は tools/build_db.py が precache.json に書き出す。データを作り直したら CACHE_NAME の番号を上げる
+const CACHE_NAME = 'quiz-cache-v2';
 const NETWORK_TIMEOUT_MS = 4000;
 
-const PRECACHE = [
-  "./",
-  "index.html",
-  "viewer.html",
-  "manifest.webmanifest",
-  "Sanitary_Engineering_Exam_DB_v30.xlsx",
-  "matome.xlsx",
-  "icons/icon-192.png",
-  "icons/icon-512.png",
-  "icons/apple-touch-icon.png",
-  "figures/H23-01.png",
-  "figures/H23-08.png",
-  "figures/H24-03.png",
-  "figures/H24-06.png",
-  "figures/H24-09.png",
-  "figures/H25-04.png",
-  "figures/H25-07.png",
-  "figures/H26-01.png",
-  "figures/H26-09.png",
-  "figures/H26-23.png",
-  "figures/H27-14.png",
-  "figures/H27-17.png",
-  "figures/H28-06.png",
-  "figures/H28-15.png",
-  "figures/H29-02.png",
-  "figures/H29-09.png",
-  "figures/H29-14.png",
-  "figures/H30-04.png",
-  "figures/R1%E5%86%8D-06.png",
-  "figures/R1%E6%9C%AC-01.png",
-  "figures/R1%E6%9C%AC-23.png",
-  "figures/R2-01.png",
-  "figures/R3-20.png",
-  "figures/R4-11.png",
-  "figures/R4-15.png",
-  "figures/R5-04.png",
-  "figures/R6-17.png",
-  "figures/R7-02.png"
-];
+// 先に保存するファイル（アプリ本体・科目DB・まとめノート・図が必要な問題の画像）の一覧は precache.json にある
+// それ以外の問題画像は、開いたときに保存する
 
 const CDN_PRECACHE = [
   "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
@@ -62,8 +26,10 @@ const CDN_HOSTS = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net"];
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
+    let local = [];
+    try { local = await (await fetch('precache.json', { cache: 'no-cache' })).json(); } catch (e) { /* 一覧が読めなくても続ける */ }
     // 1つ失敗しても他は保存する
-    await Promise.allSettled([...PRECACHE, ...CDN_PRECACHE].map(async url => {
+    await Promise.allSettled([...local, ...CDN_PRECACHE].map(async url => {
       const res = await fetch(url, { cache: 'no-cache' });
       if (res.ok || res.type === 'opaque') await cache.put(url, res);
     }));
@@ -101,11 +67,19 @@ async function networkFirst(request) {
   }
 }
 
+// 通信が止まったままにならないよう、時間切れで失敗させる（画像の読み込みエラー表示につなげる）
+function fetchWithTimeout(request, ms) {
+  return Promise.race([
+    fetch(request),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+  ]);
+}
+
 async function cacheFirst(request) {
   const cache = await caches.open(CACHE_NAME);
   const cached = await cache.match(request);
   if (cached) return cached;
-  const res = await fetch(request);
+  const res = await fetchWithTimeout(request, 10000);
   if (res.ok || res.type === 'opaque') cache.put(request, res.clone());
   return res;
 }
@@ -115,7 +89,8 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin === self.location.origin) {
-    event.respondWith(networkFirst(request));
+    // 問題画像は問題IDごとに固定なので、保存分を優先する（データを作り直したら CACHE_NAME の番号を上げる）
+    event.respondWith(url.pathname.includes('/figures/') ? cacheFirst(request) : networkFirst(request));
   } else if (CDN_HOSTS.includes(url.hostname)) {
     event.respondWith(cacheFirst(request));
   }

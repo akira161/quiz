@@ -1,7 +1,7 @@
 {
-  "name": "技術士 衛生工学 過去問演習",
-  "short_name": "衛生工学 過去問",
-  "description": "技術士一次試験 衛生工学部門の過去問演習・本番形式模試・まとめノート",
+  "name": "技術士一次試験 過去問演習",
+  "short_name": "技術士 過去問",
+  "description": "技術士第一次試験（専門・基礎・適性）の過去問演習・本番形式の模試・まとめノート",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

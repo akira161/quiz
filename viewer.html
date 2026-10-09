@@ -228,12 +228,22 @@
   }
 
   const EXCEL_FILE = "matome.xlsx";
-  const EXCEL_DB_FILE = "Sanitary_Engineering_Exam_DB_v30.xlsx"; // 過去問DBも参照
+  const EXCEL_DB_FILE = "data/senmon.xlsx"; // 専門科目の過去問DBも参照（関連過去問の検索用）
   let sheetDataMap = {}; 
   let currentSheetName = "";
   let currentGenres = new Set();
   let sheetHeaders = {}; 
   let pastExamQuestions = []; // 過去問保存用
+
+  // 出典コード（H23, R1再…）→ 年度表記
+  function yearLabel(code) {
+    const m = String(code).trim().match(/^([HR])(\d+)(再?)$/);
+    if (!m) return String(code).trim();
+    const n = parseInt(m[2], 10);
+    if (m[1] === 'H') return `平成${n}年度`;
+    if (n === 1) return m[3] ? '令和元年度(再試験)' : '令和元年度(本試験)';
+    return `令和${n}年度`;
+  }
 
   window.onload = async () => {
     
@@ -243,7 +253,7 @@
         throw new Error("DB file not found");
     }).then(buffer => {
         const wb = XLSX.read(buffer, {type: "array"});
-        const ws = wb.Sheets["過去問マスターDB"];
+        const ws = wb.Sheets["問題DB"];
         if(ws) {
             const data = XLSX.utils.sheet_to_json(ws, {defval: ""});
             pastExamQuestions = data.map((row, i) => {
@@ -253,17 +263,17 @@
                     const opt = String(row[key] || '').trim();
                     if(opt) options.push(opt);
                 }
-                let rawAns = String(row['公式正答'] || '').trim();
+                let rawAns = String(row['正答'] || '').trim();
                 rawAns = rawAns.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
                 let ansMatch = rawAns.match(/\d+/);
                 return {
-                    year: String(row['年度'] || '').trim(),
-                    qNum: String(row['設問番号'] || `Q${i+1}`).trim(),
-                    genre: String(row['大分類(ブロック)'] || '').trim(),
-                    subgenre: String(row['サブジャンル'] || '').trim(),
-                    topic: String(row['出題論点（細目）'] || '').trim(),
+                    year: yearLabel(row['出典']),
+                    qNum: String(row['問題番号'] || `Q${i+1}`).trim(),
+                    genre: String(row['ブロック'] || '').trim(),
+                    subgenre: String(row['旧サブジャンル'] || '').trim(),
+                    topic: String(row['細目'] || '').trim(),
                     question: String(row['問題文'] || '').trim(),
-                    theme: String(row['問題のテーマ・内容概要'] || '').trim(),
+                    theme: [row['テーマ概要'], row['Issue']].map(v => String(v || '').trim()).filter(Boolean).join(' '),
                     options: options,
                     ansIdx: ansMatch ? parseInt(ansMatch[0], 10) - 1 : -1
                 };

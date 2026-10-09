@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <title>技術士 衛生工学 過去問演習</title>
+  <title>技術士一次試験 過去問演習</title>
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#4338ca">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -288,6 +288,15 @@
     [data-theme="dark"] .api-link:hover { color: #93c5fd; }
     .warning-text { color: var(--danger-text); font-size: 0.85rem; font-weight: bold; background: var(--danger-bg); padding: 10px; border-radius: 6px; border: 1px solid rgba(239,68,68,0.3); }
 
+    /* --- 科目切り替え --- */
+    .subject-tabs { display: flex; gap: 6px; background: var(--bg); padding: 4px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 8px; }
+    .subject-tabs.loading { opacity: 0.6; pointer-events: none; }
+    .subject-tab { flex: 1; padding: 10px 4px; border: none; background: transparent; color: var(--text-muted); font-weight: bold; font-size: 0.95rem; border-radius: 8px; cursor: pointer; }
+    .subject-tab.active { background: var(--card); color: var(--primary); box-shadow: 0 1px 4px rgba(0,0,0,0.12); }
+    .subject-exam-name { font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-bottom: 16px; line-height: 1.5; }
+    .fig-toggle-btn { background: transparent; border: 1px dashed var(--border); color: var(--text-muted); border-radius: 8px; padding: 8px 12px; font-size: 0.85rem; cursor: pointer; margin-bottom: 16px; }
+    .noanswer-note { background: var(--trend-bg); color: var(--trend-text); border-radius: 8px; padding: 8px 12px; font-size: 0.85rem; font-weight: bold; margin-bottom: 12px; }
+
     /* --- まとめノート連携・AI解説保存 --- */
     .note-link-btn { margin-top: 12px; width: 100%; background: transparent; border: 1px solid var(--primary); color: var(--primary); border-radius: 8px; padding: 10px; font-weight: bold; font-size: 0.9rem; cursor: pointer; }
     .note-link-btn:hover { background: var(--info-bg); }
@@ -356,7 +365,7 @@
     <div id="upload-content" style="display: none; text-align: left;">
       <div style="font-size: 0.9rem; color: var(--text-muted); background: var(--card); padding: 16px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px; line-height: 1.5;">
         セキュリティ制限によりExcelファイルを自動読み込みできません。<br>
-        お手数ですが、以下のボタンから直接 <b>最新のデータベースExcelファイル</b> を選択してください。
+        お手数ですが、以下のボタンから直接 <b>「<span id="upload-subject-name">専門</span>」の過去問データベースExcelファイル</b> を選択してください。
       </div>
       <input type="file" id="excel-file-input" accept=".xlsx, .xls" style="font-size: 0.9rem; width: 100%; padding: 8px;" onchange="handleManualUpload(event)">
     </div>
@@ -368,9 +377,10 @@
     
     <div class="help-section">
       <h3>1. 基本的な使い方（過去問演習）</h3>
-      <p>このアプリは技術士 衛生工学部門の過去問を効率よく学習するためのツールです。</p>
+      <p>このアプリは技術士第一次試験（専門［衛生工学部門］・基礎・適性の3科目）の過去問を効率よく学習するためのツールです。画面上部の「専門／基礎／適性」のタブで科目を切り替えます。科目ごとに学習記録や成績グラフが分かれます。</p>
       <ul>
-        <li><b>フィルター機能:</b> 「年度」「大分類」「小分類」「出題論点（細目）」から解きたいジャンルを絞り込めます。</li>
+        <li><b>フィルター機能:</b> 「年度」「大分類」「小分類」「出題論点（細目）」「優先度」から解きたいジャンルを絞り込めます。</li>
+        <li><b>問題の図・表:</b> 図や表が必要な問題には、問題文の下に原本の画像が自動で表示されます。それ以外の問題も「📄 原本画像を見る」で試験問題そのままの画像を確認できます。</li>
         <li><b>弱点克服フィルター:</b> 「未回答の問題」や「過去に間違えた問題」だけを優先して出題し、効率的な復習が可能です。</li>
         <li><b>傾向重視:</b> 出題順序を「傾向重視」にすると、近年よく出題されるテーマが優先的に出題されます。</li>
       </ul>
@@ -381,7 +391,11 @@
       <p>このアプリの最大の特徴は、Googleの生成AI（Gemini）を活用して<b>「過去問と似た傾向の新しいオリジナル予想問題」</b>を作成できる点です。また、問題の解説をさらに詳しくAIに質問することもできます。</p>
       <ul>
         <li><b>AI予想問題 網羅特訓:</b> 選択したジャンルの過去問を分析し、新しい5択問題を自動生成します。</li>
-        <li><b>腕試しモード:</b> 本番と同じく「35問中から25問を選んで解答」し、制限時間付きで受ける模擬試験です。50%以上（13問以上）正解で合格ライン。出題は標準の「AI予想問題 35問すべて新作」のほか、AI予想＋過去問、過去問ミックス・年度指定（APIキー不要）から選べます。試験後に「選ばなかった問題」も解くと、選び方が最適だったか（何点取れていたか）を確認できます。</li>
+        <li><b>腕試しモード:</b> 本番と同じ形式・制限時間の模擬試験です。50%以上の正解で合格ライン。
+          <br>・専門: 35問から25問を選んで解答（120分）。標準の「AI予想問題 35問すべて新作」のほか、AI予想＋過去問、過去問ミックス・年度指定から選べます。
+          <br>・基礎: 5群×6問から各群3問ずつ計15問を選んで解答（60分）。
+          <br>・適性: 15問すべてに解答（60分）。
+          <br>基礎・適性は過去問ミックス・年度指定（APIキー不要）で出題します。専門・基礎では、試験後に「選ばなかった問題」も解くと、選び方が最適だったか（何点取れていたか）を確認できます。</li>
       </ul>
       <div class="warning-text" style="margin-top: 12px;">
         ※AI機能（詳細解説・予想問題・腕試しモードのAI出題）を利用するには、ご自身で「APIキー」を取得してアプリに設定する必要があります（無料）。詳しくは下記の手順をご覧ください。
@@ -419,13 +433,18 @@
   </div>
 
   <div id="screen-start" class="screen">
-    <h2>出題設定</h2>
+    <div id="subject-tabs" class="subject-tabs">
+      <button class="subject-tab active" data-key="senmon" onclick="selectSubject('senmon')">専門</button>
+      <button class="subject-tab" data-key="kiso" onclick="selectSubject('kiso')">基礎</button>
+      <button class="subject-tab" data-key="tekisei" onclick="selectSubject('tekisei')">適性</button>
+    </div>
+    <div id="subject-exam-name" class="subject-exam-name"></div>
     
     <div class="memory-summary">
       <div class="ms-title">
         <div style="display: flex; align-items: center; gap: 6px;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
-          あなたの端末内の学習記録
+          あなたの端末内の学習記録（<span id="memory-subject">専門</span>）
         </div>
       </div>
       <div class="ms-stats">
@@ -463,18 +482,28 @@
       </div>
       
       <div class="filter-group">
-        <label for="genre-filter">大分類</label>
+        <label for="genre-filter" id="lbl-genre">大分類</label>
         <select id="genre-filter" class="filter-select" onchange="updateFilterUI()"></select>
       </div>
 
       <div class="filter-group" style="grid-column: 1 / -1;">
-        <label for="subgenre-filter">小分類（サブジャンル）</label>
+        <label for="subgenre-filter" id="lbl-subgenre">小分類（サブジャンル）</label>
         <select id="subgenre-filter" class="filter-select" onchange="updateFilterUI()"></select>
       </div>
 
       <div class="filter-group" style="grid-column: 1 / -1;">
-        <label for="topic-filter">出題論点（細目）</label>
+        <label for="topic-filter" id="lbl-topic">出題論点（細目）</label>
         <select id="topic-filter" class="filter-select" onchange="updateFilterUI()"></select>
+      </div>
+
+      <div class="filter-group" style="grid-column: 1 / -1;">
+        <label for="priority-filter">優先度（出題頻度）</label>
+        <select id="priority-filter" class="filter-select" onchange="updateFilterUI()">
+          <option value="all">すべて</option>
+          <option value="高">高（よく出る）</option>
+          <option value="中">中</option>
+          <option value="低">低</option>
+        </select>
       </div>
 
       <div style="display: flex; gap: 12px; grid-column: 1 / -1;">
@@ -514,7 +543,7 @@
     <button id="start-btn" class="nav-btn" onclick="startQuiz()">過去問演習を開始する</button>
     <button id="start-ai-btn" class="nav-btn" onclick="startAIQuiz()">✨ AI予想問題 網羅特訓モード (5問ずつ生成)</button>
     <button id="start-mock-btn" class="nav-btn" onclick="openMockSetup()" style="background: linear-gradient(135deg, #f59e0b, #ea580c); margin-top: 16px;">
-      🏆 腕試しモード (本番形式: 35問中25問選択・時間制限)
+      🏆 腕試しモード (本番形式・時間制限)
     </button>
     <button class="nav-btn secondary" onclick="openMockHistory()" style="margin-top: 12px;">
       📊 過去の腕試し結果を見る
@@ -660,13 +689,10 @@
   </div>
 
   <div id="screen-mock-setup" class="screen">
-    <h2>🏆 腕試しモード（本番形式）</h2>
+    <h2 id="mock-setup-title">🏆 腕試しモード（本番形式）</h2>
     <div class="mock-setup-card">
       <h3>試験のルール</h3>
-      ・全35問から<b>25問を選んで</b>解答します（26問目は選べません）<br>
-      ・<b>50%以上（25問中13問以上）正解で合格</b>ライン<br>
-      ・試験中は正誤・解説は表示されません。解答は提出まで何度でも変更できます<br>
-      ・時間切れになると、その時点の解答で自動採点されます
+      <div id="mock-rules"></div>
     </div>
 
     <div class="filter-group">
@@ -676,9 +702,9 @@
     <div class="filter-group" style="margin-top: 12px;">
       <label for="mock-time">制限時間</label>
       <select id="mock-time" class="filter-select">
-        <option value="120" selected>120分（本番と同じ）</option>
+        <option value="120" selected>120分（専門の本番と同じ）</option>
         <option value="90">90分</option>
-        <option value="60">60分</option>
+        <option value="60">60分（基礎・適性の本番と同じ）</option>
         <option value="0">制限なし</option>
       </select>
     </div>
@@ -706,17 +732,30 @@
 </div>
 
 <script>
-  const EXCEL_FILE_NAME = "Sanitary_Engineering_Exam_DB_v30.xlsx";
-  const SHEET_NAME = "過去問マスターDB";
+  // --- 科目の設定（専門・基礎・適性） ---
+  const SUBJECTS = {
+    senmon:  { label: '専門（衛生工学）', short: '専門', file: 'data/senmon.xlsx',
+               genreLabel: '大分類', subLabel: '小分類（サブジャンル）', topicLabel: '出題論点（細目）',
+               examName: '技術士第一次試験【専門科目】衛生工学部門（建築環境・設備、水質管理、廃棄物管理）', hasNotes: true },
+    kiso:    { label: '基礎科目', short: '基礎', file: 'data/kiso.xlsx',
+               genreLabel: '大分類（群）', subLabel: '小分類', topicLabel: '出題テーマ',
+               examName: '技術士第一次試験【基礎科目】（設計・計画、情報・論理、解析、材料・化学・バイオ、環境・エネルギー・技術の5群）' },
+    tekisei: { label: '適性科目', short: '適性', file: 'data/tekisei.xlsx',
+               genreLabel: '大分類', subLabel: '小分類', topicLabel: '出題テーマ',
+               examName: '技術士第一次試験【適性科目】（技術士法第4章の遵守、技術者倫理、安全・リスク、社会・環境）' }
+  };
+  const SUBJECT_KEYS = Object.keys(SUBJECTS);
+  const SHEET_NAME = "問題DB";
   const FIGURE_DIR = "figures";
+
+  let currentSubject = 'senmon';
+  const subjectCache = {};   // 読み込み済みの科目ごとの問題
 
   let allQuestions = [];
   let masterYears = [];
   let masterGenres = [];
-  let genreToSubgenres = {};
-  let subgenreToTopics = {};
 
-  // 頻出度は細目（旧サブジャンル33区分）単位で集計する
+  // 頻出度は「集計の単位」ごとに計算する（専門＝細目、基礎・適性＝小分類）
   let topicTrendScores = {};
   let radarChartInstance = null;
 
@@ -729,19 +768,97 @@
   // --- 腕試しモード用変数 ---
   let isMockMode = false;
   let mockAnsweredCount = 0;
-  const MAX_MOCK_SELECT = 25;
   let mockState = null;      // 本番形式の試験状態（phase: exam → graded → extra → done）
   let mockTimerId = null;
   let mockLastTick = 0;
 
   let userMemory = {
     theme: 'light',
-    stats: { total: 0, correct: 0 },
+    subject: 'senmon',
+    stats: { total: 0, correct: 0 },     // 旧形式（専門のみ）。statsBy に引き継ぐ
+    statsBy: {},
     history: {},
     mockExams: [],
     savedSession: null 
   };
-  
+
+  function statsOf(key) {
+    if (!userMemory.statsBy) userMemory.statsBy = {};
+    if (!userMemory.statsBy[key]) userMemory.statsBy[key] = { total: 0, correct: 0 };
+    return userMemory.statsBy[key];
+  }
+
+  function bumpStats(isCorrect) {
+    const s = statsOf(currentSubject);
+    s.total++;
+    if (isCorrect) s.correct++;
+  }
+
+  // --- 年度・正答・表示のヘルパー ---
+  // 出典コード（H23, R1, R1再…）→ 年度表記。専門科目の従来ID「平成23年度_Ⅳ-1」と互換にするため従来の表記に合わせる
+  function yearInfo(code) {
+    const m = String(code).trim().match(/^([HR])(\d+)(再?)$/);
+    if (!m) return { label: String(code).trim(), num: 0 };
+    const n = parseInt(m[2], 10);
+    if (m[1] === 'H') return { label: `平成${n}年度`, num: n + 1988 };
+    if (n === 1) return { label: m[3] ? '令和元年度(再試験)' : '令和元年度(本試験)', num: 2019 };
+    return { label: `令和${n}年度`, num: n + 2018 };
+  }
+
+  // 正答セル: "3"＝選択肢3、"4/3"＝4または3どちらも正解、"全員"＝不適切な出題で全員正解、空＝未登録
+  function parseAnswerCell(raw) {
+    const s = String(raw ?? '').trim().replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+    if (s === '') return { has: false, answer: -1, also: [], all: false };
+    if (s.includes('全員')) return { has: true, answer: -1, also: [], all: true };
+    const nums = (s.match(/[1-5]/g) || []).map(n => parseInt(n, 10) - 1);
+    if (nums.length === 0) return { has: false, answer: -1, also: [], all: false };
+    return { has: true, answer: nums[0], also: nums.slice(1), all: false };
+  }
+
+  // 正答が登録されているか（AI生成や旧形式の問題には hasAnswer がないので answer の有無で判定）
+  function hasAnswerOf(q) {
+    return !!q.allCorrect || (q.hasAnswer !== false && Number.isInteger(q.answer) && q.answer >= 0);
+  }
+
+  function isCorrectAnswer(q, selectedIdx) {
+    if (!hasAnswerOf(q)) return false;
+    if (q.allCorrect) return true;
+    return selectedIdx === q.answer || (q.alsoCorrect || []).includes(selectedIdx);
+  }
+
+  function correctIndexes(q) {
+    if (!hasAnswerOf(q)) return [];
+    if (q.allCorrect) return q.options.map((_, i) => i);
+    return [q.answer, ...(q.alsoCorrect || [])];
+  }
+
+  // 正解の表示文（複数正解・全員正解に対応）
+  function correctLabel(q) {
+    if (!hasAnswerOf(q)) return '（正答未登録）';
+    if (q.allCorrect) return '全員正解（不適切な出題）';
+    return [q.answer, ...(q.alsoCorrect || [])].map(i => i + 1).join(' または ');
+  }
+
+  function escapeHtml(str) {
+    return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // DB由来の問題は記号（< > * _ | など）をそのまま表示するため、Markdownに変換しない。AI生成の問題はMarkdown/LaTeXで表示する
+  function richText(q, text) {
+    if (q && q.plain) return escapeHtml(text).replace(/\n/g, '<br>');
+    return DOMPurify.sanitize(marked.parse(String(text ?? '')));
+  }
+
+  function optionHtml(q, idx, opt) {
+    if (q && q.plain) return `<b>${idx + 1}.</b> ${escapeHtml(opt).replace(/\n/g, '<br>')}`;
+    return DOMPurify.sanitize(marked.parse(`**${idx + 1}.** ${opt}`));
+  }
+
+  // 解説文（Markdown）に差し込む文字列の記号をエスケープする
+  function mdEscape(str) {
+    return String(str ?? '').replace(/([\\`*_{}\[\]()#+!|<>~])/g, '\\$1');
+  }
+
   // オフライン対応（Service Worker の登録）
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -759,21 +876,23 @@
 
   window.onload = async () => {
     updateOnlineBadge();
+    loadUserData();
+    loadSavedExplanations();
+    const key = SUBJECTS[userMemory.subject] ? userMemory.subject : 'senmon';
     try {
-      await loadExcelData();
+      await activateSubject(key);
       finishInit();
     } catch (error) {
       console.warn("自動読み込み失敗:", error);
+      currentSubject = key;
       document.getElementById('loading-content').style.display = 'none';
       document.getElementById('upload-content').style.display = 'block';
+      document.getElementById('upload-subject-name').textContent = SUBJECTS[key].label;
     }
   };
 
   function finishInit() {
-    loadUserData();
-    loadSavedExplanations();
     loadMatomeNotes().catch(e => console.warn("まとめノート読み込みスキップ:", e));
-    initApp();
     applyTheme(); 
     updateMemoryUI(); 
     loadApiKey();
@@ -811,6 +930,7 @@
   window.resetHistory = function() {
     if (confirm("本当に学習記録をすべてリセットしますか？\n（総解答数、正解数、問題ごとの正誤履歴が消去されます）\n※この操作は取り消せません。")) {
       userMemory.stats = { total: 0, correct: 0 };
+      userMemory.statsBy = {};
       userMemory.history = {};
       saveUserData();
       updateMemoryUI(); 
@@ -826,6 +946,11 @@
         userMemory = JSON.parse(savedData);
         if (!userMemory.mockExams) userMemory.mockExams = [];      
         if (!userMemory.savedSession) userMemory.savedSession = null; 
+        if (!userMemory.history) userMemory.history = {};
+        // 旧形式の通算成績（専門科目のみ）を科目別に引き継ぐ
+        if (!userMemory.statsBy) {
+          userMemory.statsBy = { senmon: { total: (userMemory.stats || {}).total || 0, correct: (userMemory.stats || {}).correct || 0 } };
+        }
       }
     } catch (e) {
       console.error("メモリの読み込みエラー", e);
@@ -977,7 +1102,7 @@
   }
 
   function updateMemoryUI() {
-    const s = userMemory.stats;
+    const s = statsOf(currentSubject);
     document.getElementById('ms-total').textContent = s.total;
     document.getElementById('ms-correct').textContent = s.correct;
     const rate = s.total > 0 ? Math.round((s.correct / s.total) * 100) : 0;
@@ -989,12 +1114,57 @@
     }
   }
 
-  async function loadExcelData() {
-    // 図表入りでファイルが大きいため、毎回の再ダウンロードはせず、更新時だけ取り直す（no-cache = 再検証）
-    const response = await fetch(EXCEL_FILE_NAME, { cache: 'no-cache' });
+  async function fetchSubjectBuffer(key) {
+    // 更新時だけ取り直す（no-cache = 再検証）
+    const response = await fetch(SUBJECTS[key].file, { cache: 'no-cache' });
     if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-    const arrayBuffer = await response.arrayBuffer();
-    processExcelArrayBuffer(arrayBuffer);
+    return response.arrayBuffer();
+  }
+
+  // 科目を読み込んで切り替える（読み込み済みならそのまま使う）
+  async function activateSubject(key, buffer) {
+    let qs = subjectCache[key];
+    if (!qs) {
+      qs = parseSubjectBuffer(buffer || await fetchSubjectBuffer(key), key);
+      subjectCache[key] = qs;
+    }
+    currentSubject = key;
+    allQuestions = qs;
+    userMemory.subject = key;
+    saveUserData();
+    ['year-filter', 'genre-filter', 'subgenre-filter', 'topic-filter', 'priority-filter', 'memory-filter'].forEach(id => { document.getElementById(id).value = 'all'; });
+    document.getElementById('keyword-filter').value = '';
+    initApp();
+    applySubjectUI();
+  }
+
+  // 科目タブを押したとき
+  window.selectSubject = async function(key) {
+    if (key === currentSubject || !SUBJECTS[key]) return;
+    document.getElementById('subject-tabs').classList.add('loading');
+    try {
+      await activateSubject(key);
+      updateMemoryUI();
+    } catch (e) {
+      console.error(e);
+      alert(`${SUBJECTS[key].label}のデータを読み込めませんでした。\n${e.message}`);
+      applySubjectUI();
+    } finally {
+      document.getElementById('subject-tabs').classList.remove('loading');
+    }
+  };
+
+  // 科目に合わせて画面の表記を切り替える
+  function applySubjectUI() {
+    const sj = SUBJECTS[currentSubject];
+    document.querySelectorAll('#subject-tabs .subject-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.key === currentSubject));
+    document.getElementById('lbl-genre').textContent = sj.genreLabel;
+    document.getElementById('lbl-subgenre').textContent = sj.subLabel;
+    document.getElementById('lbl-topic').textContent = sj.topicLabel;
+    document.getElementById('subject-exam-name').textContent = sj.examName;
+    document.getElementById('memory-subject').textContent = sj.short;
+    document.getElementById('start-mock-btn').textContent = `🏆 腕試しモード（${mockRuleOf(currentSubject).summary}）`;
+    document.getElementById('start-ai-btn').textContent = `✨ AI予想問題 網羅特訓モード (5問ずつ生成)`;
   }
 
   window.handleManualUpload = function(event) {
@@ -1002,9 +1172,9 @@
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
       try {
-        processExcelArrayBuffer(e.target.result);
+        await activateSubject(currentSubject, e.target.result);
         finishInit();
       } catch (error) {
         alert("エクセルの解析に失敗しました: " + error.message);
@@ -1013,77 +1183,81 @@
     reader.readAsArrayBuffer(file);
   };
 
-  function processExcelArrayBuffer(arrayBuffer) {
+  // 「問題DB」シート（日本技術士会の過去問DB形式）を問題の一覧に変換する
+  function parseSubjectBuffer(arrayBuffer, key) {
     const workbook = XLSX.read(arrayBuffer, {type: "array"});
-    const worksheet = workbook.Sheets[SHEET_NAME];
-    
+    const worksheet = workbook.Sheets[SHEET_NAME] || workbook.Sheets[workbook.SheetNames[0]];
     if (!worksheet) throw new Error(`シート「${SHEET_NAME}」が見つかりません。`);
-    
-    const data = XLSX.utils.sheet_to_json(worksheet, {defval: ""});
 
-    allQuestions = data.map((row, index) => {
-      let yearStr = String(row['年度'] || '').trim();
-      let yearNum = 0;
-      const rMatch = yearStr.match(/令和([0-9元]+)/);
-      if (rMatch) {
-          yearNum = rMatch[1] === '元' ? 1 : parseInt(rMatch[1]);
-          yearNum += 2018; 
-      } else {
-          const hMatch = yearStr.match(/平成([0-9]+)/);
-          if (hMatch) {
-              yearNum = parseInt(hMatch[1]) + 1988; 
-          } else {
-              const numMatch = yearStr.match(/[0-9]{4}/);
-              if(numMatch) yearNum = parseInt(numMatch[0]);
-          }
-      }
+    const grid = XLSX.utils.sheet_to_json(worksheet, {header: 1, defval: ""});
+    const headerIdx = grid.findIndex(r => String(r[0]).trim() === 'ID');
+    if (headerIdx < 0) throw new Error("見出し行（A列が「ID」の行）が見つかりません。");
+    const header = grid[headerIdx].map(h => String(h).trim());
+    const str = v => String(v ?? '').trim();
+    const splitTags = v => str(v).split(/[、,，]/).map(t => t.trim()).filter(Boolean);
 
-      const block = String(row['大分類(ブロック)'] || '').trim();
-      const sub = String(row['サブジャンル'] || '').trim();
-      const topic = String(row['出題論点（細目）'] || '').trim() || sub;
-      const qNumStr = String(row['設問番号'] || `Q${index+1}`).trim();
-      
+    const questions = [];
+    grid.slice(headerIdx + 1).forEach(cells => {
+      if (str(cells[0]) === '') return;
+      const row = {};
+      header.forEach((h, i) => { if (h) row[h] = cells[i]; });
+
+      const yi = yearInfo(row['出典']);
+      const qNum = str(row['問題番号']);
+      const idBase = `${yi.label}_${qNum}`;
+
       const options = [];
-      for(let i=1; i<=5; i++){
-        const key = `選択肢${String.fromCharCode(0x2460 + i - 1)}`;
-        const opt = String(row[key] || '').trim();
-        if(opt) options.push(opt);
+      for (let i = 0; i < 5; i++) {
+        const opt = str(row[`選択肢${String.fromCharCode(0x2460 + i)}`]).replace(/^[①-⑤]\s*/, '');
+        if (opt) options.push(opt);
       }
-      
-      let rawAns = String(row['公式正答'] || '').trim();
-      rawAns = rawAns.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
-      
-      let ansIdx = 0;
-      const ansMatch = rawAns.match(/\d+/);
-      if (ansMatch) {
-          ansIdx = parseInt(ansMatch[0], 10) - 1;
-      }
-      
-      const theme = String(row['問題のテーマ・内容概要'] || '').trim();
-      const exp = theme ? `【テーマ・内容概要】\n${theme}` : "【解説】\n詳細な解説はありません。";
-      
-      // 「図表」列に記載がある問題は、DBの図表シートから書き出した figures/<問題ID>.png を表示する
-      const qId = String(row['問題ID'] || '').trim();
-      const hasFigure = String(row['図表'] || '').trim() !== '' && qId !== '';
-      const imgName = String(row['画像ファイル名'] || row['画像URL'] || '').trim()
-                      || (hasFigure ? `${FIGURE_DIR}/${encodeURIComponent(qId)}.png` : '');
-      
-      return {
-        id: `${yearStr}_${qNumStr}`, 
-        qid: qId,
-        year: yearStr,
-        yearNum: yearNum,
-        qNum: qNumStr,
-        genre: block,
-        subgenre: sub,
+
+      // 専門科目は従来の分類（3ブロック・サブジャンル・細目）、基礎・適性は大分類・小分類・Issue を使う
+      const legacy = str(row['ブロック']) !== '';
+      const genre = legacy ? str(row['ブロック']) : (splitTags(row['大分類'])[0] || '');
+      const subTags = legacy ? [str(row['旧サブジャンル'])].filter(Boolean) : splitTags(row['小分類']);
+      const subgenre = subTags[0] || '';
+      const issue = str(row['Issue']);
+      const topic = legacy ? (str(row['細目']) || subgenre) : issue;
+
+      const ans = parseAnswerCell(row['正答']);
+      const theme = str(row['テーマ概要']);
+      let exp;
+      if (theme) exp = `【テーマ・内容概要】\n${mdEscape(theme)}`;
+      else if (issue) exp = `【テーマ】\n${mdEscape(issue)}`;
+      else exp = "【解説】\n詳細な解説はありません。";
+
+      const dbId = str(row['ID']);
+      questions.push({
+        id: key === 'senmon' ? idBase : `${key}:${idBase}`,
+        subject: key,
+        qid: str(row['旧問題ID']),
+        year: yi.label,
+        yearNum: yi.num,
+        qNum: qNum,
+        genre: genre,
+        subgenre: subgenre,
+        subTags: subTags,
         topic: topic,
-        question: String(row['問題文'] || '').trim(),
+        issue: issue,
+        priority: str(row['優先度']),
+        tagsText: [str(row['大分類']), str(row['小分類'])].filter(Boolean).join(' '),
+        trendKey: legacy ? topic : subgenre,
+        question: str(row['問題文']),
         options: options,
-        answer: ansIdx,
+        hasAnswer: ans.has,
+        answer: ans.answer,
+        alsoCorrect: ans.also,
+        allCorrect: ans.all,
         explanation: exp,
-        imageUrl: imgName 
-      };
-    }).filter(q => q.question !== "");
+        needsFigure: str(row['図表']) !== '',
+        imageUrl: `${FIGURE_DIR}/${key}/${encodeURIComponent(dbId)}.png`,
+        plain: true
+      });
+    });
+    const valid = questions.filter(q => q.question !== "" && q.options.length > 0);
+    if (valid.length === 0) throw new Error("問題が1件も読み込めませんでした。");
+    return valid;
   }
 
   function getYearWeight(diff) {
@@ -1096,61 +1270,41 @@
   }
 
   function initApp() {
-    const ySet = new Set();
-    const gSet = new Set();
-    const topicYears = {};
-    genreToSubgenres = {};
-    subgenreToTopics = {};
     topicTrendScores = {};
-
+    const keyYears = {};
     allQuestions.forEach(q => {
-      if(q.year) ySet.add(q.year);
-      if(q.genre) {
-        gSet.add(q.genre);
-        if(!genreToSubgenres[q.genre]) genreToSubgenres[q.genre] = new Set();
-        if(q.subgenre) genreToSubgenres[q.genre].add(q.subgenre);
-      }
-      if(q.subgenre && q.topic) {
-        if(!subgenreToTopics[q.subgenre]) subgenreToTopics[q.subgenre] = new Set();
-        subgenreToTopics[q.subgenre].add(q.topic);
-      }
-      if(q.topic && q.yearNum > 0) {
-          if(!topicYears[q.topic]) topicYears[q.topic] = [];
-          topicYears[q.topic].push(q.yearNum);
+      if (q.trendKey && q.yearNum > 0) {
+        (keyYears[q.trendKey] = keyYears[q.trendKey] || []).push(q.yearNum);
       }
     });
 
-    let maxYearNum = Math.max(...allQuestions.map(q => q.yearNum).filter(n => n > 0));
-    let rawScores = {};
-
-    Object.keys(topicYears).forEach(topic => {
-        let score = 0;
-        topicYears[topic].forEach(y => {
-            let diff = maxYearNum - y;
-            score += getYearWeight(diff);
-        });
-        rawScores[topic] = score;
+    const maxYearNum = Math.max(...allQuestions.map(q => q.yearNum).filter(n => n > 0));
+    const rawScores = {};
+    Object.keys(keyYears).forEach(k => {
+      rawScores[k] = keyYears[k].reduce((sum, y) => sum + getYearWeight(maxYearNum - y), 0);
     });
 
-    let maxRawScore = Math.max(...Object.values(rawScores));
-    if (maxRawScore === 0) maxRawScore = 1;
-
-    Object.keys(rawScores).forEach(topic => {
-        let score = rawScores[topic];
-        let ratio = score / maxRawScore;
-        
-        let level = 1;
-        if (ratio >= 0.8) level = 5;
-        else if (ratio >= 0.6) level = 4;
-        else if (ratio >= 0.4) level = 3;
-        else if (ratio >= 0.2) level = 2;
-        
-        topicTrendScores[topic] = { raw: score, level: level };
+    const maxRawScore = Math.max(1, ...Object.values(rawScores));
+    Object.keys(rawScores).forEach(k => {
+      const ratio = rawScores[k] / maxRawScore;
+      let level = 1;
+      if (ratio >= 0.8) level = 5;
+      else if (ratio >= 0.6) level = 4;
+      else if (ratio >= 0.4) level = 3;
+      else if (ratio >= 0.2) level = 2;
+      topicTrendScores[k] = { raw: rawScores[k], level: level };
     });
 
     const sortedQuestionsByYear = [...allQuestions].sort((a, b) => b.yearNum - a.yearNum);
     masterYears = Array.from(new Set(sortedQuestionsByYear.map(q => q.year))).filter(y => y);
-    masterGenres = Array.from(gSet).sort();
+    // 大分類は、試験での出題順（問題番号の若い順）に並べる
+    const genreFirst = {};
+    allQuestions.forEach(q => {
+      if (!q.genre) return;
+      const o = slotOrder(q);
+      if (!(q.genre in genreFirst) || o < genreFirst[q.genre]) genreFirst[q.genre] = o;
+    });
+    masterGenres = Object.keys(genreFirst).sort((x, y) => genreFirst[x] - genreFirst[y]);
 
     buildInitialFilterSelects();
     updateFilterUI();
@@ -1162,61 +1316,56 @@
     masterYears.forEach(y => ySelect.add(new Option(y, y)));
 
     const gSelect = document.getElementById('genre-filter');
-    gSelect.innerHTML = '<option value="all">すべての大分類</option>';
+    gSelect.innerHTML = '<option value="all">すべて</option>';
     masterGenres.forEach(g => gSelect.add(new Option(g, g)));
   }
 
+  function fillOptions(select, allLabel, values) {
+    select.innerHTML = '';
+    select.add(new Option(allLabel, 'all'));
+    values.forEach(v => select.add(new Option(v, v)));
+  }
+
   window.updateFilterUI = function() {
-    const ySelect = document.getElementById('year-filter');
-    const gSelect = document.getElementById('genre-filter');
-    const sSelect = document.getElementById('subgenre-filter');
-    const tSelect = document.getElementById('topic-filter');
-    const mSelect = document.getElementById('memory-filter');
+    const el = id => document.getElementById(id);
+    const sj = SUBJECTS[currentSubject];
+    const sel = { year: el('year-filter'), genre: el('genre-filter'), sub: el('subgenre-filter'), topic: el('topic-filter'), prio: el('priority-filter') };
+    const cur = {};
+    Object.keys(sel).forEach(k => { cur[k] = sel[k].value || 'all'; });
+    const currentMemory = el('memory-filter').value;
+    const currentKeyword = el('keyword-filter').value.toLowerCase().trim();
+    const uniqSorted = arr => Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ja'));
 
-    const currentYear = ySelect.value;
-    const currentGenre = gSelect.value;
-    let currentSubgenre = sSelect.value || 'all';
-    let currentTopic = tSelect.value || 'all';
-    const currentMemory = mSelect.value;
-    const currentKeyword = document.getElementById('keyword-filter').value.toLowerCase().trim();
+    // 大分類 → 小分類 → 細目 と絞り込むと、下の選択肢も連動して変わる
+    const inGenre = allQuestions.filter(q => cur.genre === 'all' || q.genre === cur.genre);
+    const subs = uniqSorted(inGenre.flatMap(q => q.subTags));
+    fillOptions(sel.sub, `すべての${sj.subLabel}`, subs);
+    if (!subs.includes(cur.sub)) cur.sub = 'all';
+    sel.sub.value = cur.sub;
 
-    sSelect.innerHTML = '<option value="all">すべての小分類</option>';
-    let availableSubgenres = new Set();
-    if (currentGenre === 'all') {
-      Object.values(genreToSubgenres).forEach(set => set.forEach(s => availableSubgenres.add(s)));
-    } else {
-      availableSubgenres = genreToSubgenres[currentGenre] || new Set();
-    }
-    Array.from(availableSubgenres).sort().forEach(s => sSelect.add(new Option(s, s)));
-    
-    if (Array.from(availableSubgenres).includes(currentSubgenre)) {
-      sSelect.value = currentSubgenre;
-    } else {
-      sSelect.value = 'all'; currentSubgenre = 'all';
-    }
+    const inSub = inGenre.filter(q => cur.sub === 'all' || q.subTags.includes(cur.sub));
+    const topics = uniqSorted(inSub.map(q => q.topic));
+    fillOptions(sel.topic, `すべての${sj.topicLabel}`, topics);
+    if (!topics.includes(cur.topic)) cur.topic = 'all';
+    sel.topic.value = cur.topic;
 
-    tSelect.innerHTML = '<option value="all">すべての細目</option>';
-    let availableTopics = new Set();
-    const subgenresForTopics = currentSubgenre !== 'all' ? [currentSubgenre] : Array.from(availableSubgenres);
-    subgenresForTopics.forEach(s => (subgenreToTopics[s] || new Set()).forEach(t => availableTopics.add(t)));
-    Array.from(availableTopics).sort().forEach(t => tSelect.add(new Option(t, t)));
-
-    if (availableTopics.has(currentTopic)) {
-      tSelect.value = currentTopic;
-    } else {
-      tSelect.value = 'all'; currentTopic = 'all';
-    }
+    const match = {
+      year:  q => cur.year === 'all' || q.year === cur.year,
+      genre: q => cur.genre === 'all' || q.genre === cur.genre,
+      sub:   q => cur.sub === 'all' || q.subTags.includes(cur.sub),
+      topic: q => cur.topic === 'all' || q.topic === cur.topic,
+      prio:  q => cur.prio === 'all' || q.priority === cur.prio
+    };
+    const valuesOf = { year: q => [q.year], genre: q => [q.genre], sub: q => q.subTags, topic: q => [q.topic], prio: q => [q.priority] };
+    const allLabel = { year: 'すべての年度', genre: 'すべて', sub: `すべての${sj.subLabel}`, topic: `すべての${sj.topicLabel}`, prio: 'すべて' };
 
     const fKw = (q) => currentKeyword === '' ||
                        q.question.toLowerCase().includes(currentKeyword) ||
                        q.explanation.toLowerCase().includes(currentKeyword) ||
                        (q.topic || '').toLowerCase().includes(currentKeyword) ||
+                       (q.tagsText || '').toLowerCase().includes(currentKeyword) ||
                        q.options.some(o => o.toLowerCase().includes(currentKeyword));
-    const fY = (q, y) => y === 'all' || q.year === y;
-    const fG = (q, g) => g === 'all' || q.genre === g;
-    const fS = (q, s) => s === 'all' || q.subgenre === s;
-    const fT = (q, t) => t === 'all' || q.topic === t;
-    
+
     const fMem = (q) => {
       if (currentMemory === 'all') return true;
       const h = userMemory.history[q.id];
@@ -1227,39 +1376,21 @@
       return true;
     };
 
-    const baseForY = allQuestions.filter(q => fG(q, currentGenre) && fS(q, currentSubgenre) && fT(q, currentTopic) && fKw(q) && fMem(q));
-    const countsY = {}; baseForY.forEach(q => { countsY[q.year] = (countsY[q.year] || 0) + 1; });
-    ySelect.options[0].text = `すべての年度 (${baseForY.length}問)`;
-    for (let i = 1; i < ySelect.options.length; i++) {
-      const val = ySelect.options[i].value; const c = countsY[val] || 0;
-      ySelect.options[i].text = `${val} (${c}問)`; ySelect.options[i].disabled = (c === 0);
-    }
+    // 各選択肢の横に「他の条件を満たす問題数」を表示する
+    const keys = Object.keys(sel);
+    keys.forEach(k => {
+      const base = allQuestions.filter(q => keys.every(o => o === k || match[o](q)) && fKw(q) && fMem(q));
+      const counts = {};
+      base.forEach(q => valuesOf[k](q).forEach(v => { counts[v] = (counts[v] || 0) + 1; }));
+      const select = sel[k];
+      select.options[0].text = `${allLabel[k]} (${base.length}問)`;
+      for (let i = 1; i < select.options.length; i++) {
+        const val = select.options[i].value; const c = counts[val] || 0;
+        select.options[i].text = `${val} (${c}問)`; select.options[i].disabled = (c === 0);
+      }
+    });
 
-    const baseForG = allQuestions.filter(q => fY(q, currentYear) && fS(q, currentSubgenre) && fT(q, currentTopic) && fKw(q) && fMem(q));
-    const countsG = {}; baseForG.forEach(q => { countsG[q.genre] = (countsG[q.genre] || 0) + 1; });
-    gSelect.options[0].text = `すべての大分類 (${baseForG.length}問)`;
-    for (let i = 1; i < gSelect.options.length; i++) {
-      const val = gSelect.options[i].value; const c = countsG[val] || 0;
-      gSelect.options[i].text = `${val} (${c}問)`; gSelect.options[i].disabled = (c === 0);
-    }
-
-    const baseForS = allQuestions.filter(q => fY(q, currentYear) && fG(q, currentGenre) && fT(q, currentTopic) && fKw(q) && fMem(q));
-    const countsS = {}; baseForS.forEach(q => { countsS[q.subgenre] = (countsS[q.subgenre] || 0) + 1; });
-    sSelect.options[0].text = `すべての小分類 (${baseForS.length}問)`;
-    for (let i = 1; i < sSelect.options.length; i++) {
-      const val = sSelect.options[i].value; const c = countsS[val] || 0;
-      sSelect.options[i].text = `${val} (${c}問)`; sSelect.options[i].disabled = (c === 0);
-    }
-
-    const baseForT = allQuestions.filter(q => fY(q, currentYear) && fG(q, currentGenre) && fS(q, currentSubgenre) && fKw(q) && fMem(q));
-    const countsT = {}; baseForT.forEach(q => { countsT[q.topic] = (countsT[q.topic] || 0) + 1; });
-    tSelect.options[0].text = `すべての細目 (${baseForT.length}問)`;
-    for (let i = 1; i < tSelect.options.length; i++) {
-      const val = tSelect.options[i].value; const c = countsT[val] || 0;
-      tSelect.options[i].text = `${val} (${c}問)`; tSelect.options[i].disabled = (c === 0);
-    }
-
-    currentTargetQuestions = allQuestions.filter(q => fY(q, currentYear) && fG(q, currentGenre) && fS(q, currentSubgenre) && fT(q, currentTopic) && fKw(q) && fMem(q));
+    currentTargetQuestions = allQuestions.filter(q => keys.every(o => match[o](q)) && fKw(q) && fMem(q));
     
     const countEl = document.getElementById('target-count');
     const startBtn = document.getElementById('start-btn');
@@ -1279,18 +1410,20 @@
     }
 
     const resumeArea = document.getElementById('resume-area');
-    if (userMemory.savedSession) {
+    const saved = userMemory.savedSession;
+    if (saved) {
       resumeArea.style.display = 'block';
       let modeText = "過去問演習";
-      if (userMemory.savedSession.isMockMode) modeText = "腕試しモード";
-      else if (userMemory.savedSession.isAiMode) modeText = "AI予想問題 網羅特訓";
-      
-      const qCount = userMemory.savedSession.filteredQuestions.length;
-      const ansCount = Object.keys(userMemory.savedSession.sessionAnswers).length;
-      
+      if (saved.isMockMode) modeText = "腕試しモード";
+      else if (saved.isAiMode) modeText = "AI予想問題 網羅特訓";
+      const savedKey = saved.subject || 'senmon';
+      const qCount = saved.filteredQuestions.length;
+      const ansCount = Object.keys(saved.sessionAnswers).length;
+      const denom = saved.isMockMode ? mockRuleOf(savedKey).total : qCount;
+
       document.getElementById('resume-info').innerHTML = 
-        `${modeText} (${ansCount} / ${userMemory.savedSession.isMockMode ? '25' : qCount} 問 解答済み)<br>
-         <span style="font-size: 0.8rem;">保存日時: ${userMemory.savedSession.date}</span>`;
+        `【${SUBJECTS[savedKey].label}】${modeText} (${ansCount} / ${denom} 問 解答済み)<br>
+         <span style="font-size: 0.8rem;">保存日時: ${saved.date}</span>`;
     } else {
       resumeArea.style.display = 'none';
     }
@@ -1471,7 +1604,8 @@
 
   // 関連ノート：①まとめノートの「過去問参照ID」②今年の最新動向（関連する細目）③細目の対応表 ④数値基準の項目名が問題文に出てくるもの
   function getRelatedNotes(q) {
-    if (!matomeNotes || !q) return [];
+    // まとめノートは専門科目（衛生工学）用。旧形式の問題（subject なし）は専門として扱う
+    if (!matomeNotes || !q || (q.subject || 'senmon') !== 'senmon') return [];
     const out = [];
     const seen = new Set();
     const add = (note, why) => { if (!seen.has(note)) { seen.add(note); out.push({ note, why }); } };
@@ -1493,15 +1627,11 @@
 
   // AI予想問題の生成用：まとめノート「今年の最新動向」から該当分野の内容をプロンプトに添える
   function getTrendPrompt(genre) {
-    if (!matomeNotes) return "";
+    if (!matomeNotes || currentSubject !== 'senmon') return "";
     const rows = matomeNotes.filter(n => n.isTrend && (!genre || genre === "all" || n.row['分野・ブロック'] === genre));
     if (rows.length === 0) return "";
     const lines = rows.map(n => `■${n.title}（${n.row['時点・根拠'] || ''}）\n${n.row['最新の数値・内容'] || ''}`).join('\n');
     return `\n\n【今年おさえるべき最新動向（統計・法改正）】\n${lines}\n\n作成する問題のうち1問程度は、上記の最新動向を踏まえた問題にしてください。数値や施行時期は上記の内容を正として使い、上記にない最新の数値を推測で作らないでください。`;
-  }
-
-  function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
   function renderNoteCard(item) {
@@ -1561,12 +1691,21 @@
   }
 
   // --- 腕試しモード（本番形式 模擬試験） ---
-  const MOCK_PASS_COUNT = Math.ceil(MAX_MOCK_SELECT * 0.5); // 25問中13問（50%以上）で合格
+  // total: 解答する問題数 / pool: 出題数 / perGroup: 群ごとの選択上限 / pass: 合格ライン（50%以上）
+  const MOCK_RULES = {
+    senmon:  { total: 25, pool: 35, perGroup: null, pass: 13, minutes: 120, summary: '本番形式: 35問中25問選択',
+               rule: '全35問から<b>25問を選んで</b>解答します（26問目は選べません）' },
+    kiso:    { total: 15, pool: 30, perGroup: 3, pass: 8, minutes: 60, summary: '本番形式: 30問中15問選択',
+               rule: '5つの群（各6問）から、<b>各群3問ずつ計15問を選んで</b>解答します（1つの群で4問目は選べません）' },
+    tekisei: { total: 15, pool: 15, perGroup: null, pass: 8, minutes: 60, allRequired: true, summary: '本番形式: 15問全問解答',
+               rule: '全15問に<b>すべて解答</b>します（選択問題はありません）' }
+  };
+  function mockRuleOf(key) { return MOCK_RULES[key] || MOCK_RULES.senmon; }
+  function mockRule() { return mockRuleOf(mockState && mockState.subject); }
 
-  function slotNumber(q) {
-    const m = String(q.qNum).match(/(\d+)\s*$/);
-    return m ? parseInt(m[1], 10) : 0;
-  }
+  // 問題番号から科目の記号を除いた位置（専門 "Ⅲ-5"→"5"、基礎 "Ⅰ-2-3"→"2-3"、適性 "Ⅱ-7"→"7"）
+  function slotKey(q) { return String(q.qNum).replace(/^[ⅠⅡⅢⅣ]\s*-\s*/, ''); }
+  function slotOrder(q) { return slotKey(q).split('-').reduce((acc, n) => acc * 100 + (parseInt(n, 10) || 0), 0); }
 
   function formatDuration(sec) {
     sec = Math.max(0, Math.round(sec));
@@ -1595,43 +1734,67 @@
   }
 
   function renderMockStrategy() {
+    const rule = mockRuleOf(currentSubject);
     const stats = getGenreStrategyStats();
     const rows = masterGenres.map(g => {
       const s = stats[g];
       return { g, perExam: s.perExam, rate: s.total > 0 ? s.correct / s.total : null, total: s.total };
     });
     const hasData = rows.some(r => r.rate !== null);
-
-    // 正答率の高い分野から順に、1回あたりの出題数まで割り当てて25問にする
-    let remain = MAX_MOCK_SELECT;
+    // おすすめ選択数は、専門（分野を自由に配分できる）だけ表示する。正答率の高い分野から、1回あたりの出題数まで割り当てる
+    const showPlan = hasData && !rule.perGroup && !rule.allRequired;
+    let remain = rule.total;
     const plan = {};
-    [...rows].sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1)).forEach(r => {
-      plan[r.g] = Math.min(r.perExam, remain);
-      remain -= plan[r.g];
-    });
+    if (showPlan) {
+      [...rows].sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1)).forEach(r => {
+        plan[r.g] = Math.min(r.perExam, remain);
+        remain -= plan[r.g];
+      });
+    }
 
-    let html = `<table class="mock-table"><tr><th>大分類</th><th>出題数<br><span style="font-weight:normal">(平均)</span></th><th>あなたの<br>正答率</th>${hasData ? '<th>おすすめ<br>選択数</th>' : ''}</tr>`;
+    let html = `<table class="mock-table"><tr><th>${SUBJECTS[currentSubject].genreLabel}</th><th>出題数<br><span style="font-weight:normal">(平均)</span></th><th>あなたの<br>正答率</th>${showPlan ? '<th>おすすめ<br>選択数</th>' : ''}</tr>`;
     rows.forEach(r => {
       const rateText = r.rate === null ? '<span style="color:var(--text-muted)">記録なし</span>' : `${Math.round(r.rate * 100)}%<br><span style="font-size:0.75rem;color:var(--text-muted)">(${r.total}回)</span>`;
-      html += `<tr><td>${r.g}</td><td>${r.perExam}問</td><td>${rateText}</td>${hasData ? `<td><b>${plan[r.g]}問</b></td>` : ''}</tr>`;
+      html += `<tr><td>${escapeHtml(r.g)}</td><td>${r.perExam}問</td><td>${rateText}</td>${showPlan ? `<td><b>${plan[r.g]}問</b></td>` : ''}</tr>`;
     });
     html += '</table>';
-    html += `<ul style="margin: 12px 0 0; padding-left: 20px; font-size: 0.85rem;">
-      ${hasData ? '<li>正答率の高い分野から多めに選び、苦手分野は確実に解ける問題だけに絞るのが基本です。</li>' : '<li>過去問演習の記録がまだないため、おすすめ配分は表示できません。演習を重ねると表示されます。</li>'}
-      <li>誤答による減点はないので、<b>25問は必ず全部選んで解答</b>しましょう。</li>
-      <li>最初に35問全体をざっと見て、計算問題や得意テーマなど「確実に取れる問題」から選ぶと効率的です。</li>
-    </ul>`;
+
+    const tips = [];
+    if (rule.allRequired) {
+      tips.push(`全${rule.total}問に解答するので、問題を選ぶ必要はありません。1問に時間をかけすぎず、全問を解き切りましょう。`);
+    } else if (rule.perGroup) {
+      tips.push(`各群${rule.perGroup}問ずつ選びます。まず各群の6問に目を通し、<b>確実に解ける3問</b>を選ぶのがコツです。`);
+      tips.push(hasData ? '正答率の低い群は、計算が重い問題を避けて、知識で解ける問題を選びましょう。' : '過去問演習の記録がまだないため、群ごとの得意・不得意は表示できません。');
+    } else {
+      tips.push(hasData ? '正答率の高い分野から多めに選び、苦手分野は確実に解ける問題だけに絞るのが基本です。' : '過去問演習の記録がまだないため、おすすめ配分は表示できません。演習を重ねると表示されます。');
+      tips.push(`誤答による減点はないので、<b>${rule.total}問は必ず全部選んで解答</b>しましょう。`);
+      tips.push(`最初に${rule.pool}問全体をざっと見て、計算問題や得意テーマなど「確実に取れる問題」から選ぶと効率的です。`);
+    }
+    html += `<ul style="margin: 12px 0 0; padding-left: 20px; font-size: 0.85rem;">${tips.map(t => `<li>${t}</li>`).join('')}</ul>`;
     document.getElementById('mock-strategy').innerHTML = html;
   }
 
   window.openMockSetup = function() {
+    const rule = mockRuleOf(currentSubject);
+    const sj = SUBJECTS[currentSubject];
+    document.getElementById('mock-setup-title').textContent = `🏆 腕試しモード（${sj.label}）`;
+    document.getElementById('mock-rules').innerHTML = `
+      ・${rule.rule}<br>
+      ・<b>50%以上（${rule.total}問中${rule.pass}問以上）正解で合格</b>ライン<br>
+      ・試験中は正誤・解説は表示されません。解答は提出まで何度でも変更できます<br>
+      ・時間切れになると、その時点の解答で自動採点されます`;
+
     const sel = document.getElementById('mock-source');
     sel.innerHTML = '';
-    sel.add(new Option('AI予想問題 35問すべて新作（APIキー必要）', 'ai35'));
-    sel.add(new Option('AI予想問題28問＋過去問7問（APIキー必要）', 'ai'));
-    sel.add(new Option('過去問ミックス（問1〜35を各年度からランダムに抽出）', 'mix'));
+    if (currentSubject === 'senmon') {
+      sel.add(new Option('AI予想問題 35問すべて新作（APIキー必要）', 'ai35'));
+      sel.add(new Option('AI予想問題28問＋過去問7問（APIキー必要）', 'ai'));
+    }
+    sel.add(new Option(`過去問ミックス（問題番号ごとに各年度からランダムに抽出）`, 'mix'));
     masterYears.forEach(y => sel.add(new Option(`過去問 ${y}（本試験そのまま）`, `year:${y}`)));
-    sel.value = 'ai35';
+    sel.value = currentSubject === 'senmon' ? 'ai35' : 'mix';
+    document.getElementById('mock-time').value = String(rule.minutes);
+
     renderMockStrategy();
     switchScreen('screen-mock-setup');
     window.scrollTo(0, 0);
@@ -1646,13 +1809,14 @@
 
     let questions = [];
     if (source === 'mix') {
-      for (let k = 1; k <= 35; k++) {
-        const cands = allQuestions.filter(q => slotNumber(q) === k);
-        if (cands.length) questions.push(cands[Math.floor(Math.random() * cands.length)]);
-      }
+      // 問題番号（スロット）ごとに、各年度からランダムに1問ずつ抜き出す
+      const bySlot = {};
+      allQuestions.forEach(q => { (bySlot[slotKey(q)] = bySlot[slotKey(q)] || []).push(q); });
+      Object.values(bySlot).forEach(cands => questions.push(cands[Math.floor(Math.random() * cands.length)]));
+      questions.sort((a, b) => slotOrder(a) - slotOrder(b));
     } else if (source.startsWith('year:')) {
       const y = source.slice(5);
-      questions = allQuestions.filter(q => q.year === y).sort((a, b) => slotNumber(a) - slotNumber(b));
+      questions = allQuestions.filter(q => q.year === y).sort((a, b) => slotOrder(a) - slotOrder(b));
     } else {
       const apiKey = localStorage.getItem('my_gemini_api_key');
       if (!apiKey) { alert("AI予想問題を使うには、スタート画面の設定エリアで Gemini APIキーを保存してください。"); return; }
@@ -1680,6 +1844,7 @@
     curIdx = 0;
     mockState = {
       phase: 'exam',
+      subject: currentSubject,
       sourceLabel: settings.sourceLabel,
       timeLimitSec: settings.timeLimitSec,
       remainingSec: settings.timeLimitSec,
@@ -1860,6 +2025,8 @@
 
         return parsed.questions.slice(0, count).map((q, idx) => ({
           id: `MockAI-${genre}-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 9)}`,
+          subject: 'senmon',
+          hasAnswer: true,
           year: "AI予想 (腕試し)",
           qNum: "-",
           genre: genre,
@@ -1896,8 +2063,9 @@
     document.getElementById('mock-status-bar').style.display = 'flex';
 
     let lastGenre = null;
+    const showGroups = !mockRule().allRequired;
     filteredQuestions.forEach((q, idx) => {
-      if (q.genre !== lastGenre) {
+      if (showGroups && q.genre !== lastGenre) {
         const label = document.createElement('div');
         label.className = 'mock-nav-group';
         label.textContent = q.genre;
@@ -1935,7 +2103,7 @@
     const extraTotal = filteredQuestions.length - mockAnsweredCount;
     document.getElementById('mock-count-label').innerHTML = inExtra
       ? `解答: ${Object.keys(mockState.extraAnswers).length} / ${extraTotal} 問`
-      : `選択: <span id="mock-answered-count">${mockAnsweredCount}</span> / ${MAX_MOCK_SELECT} 問`;
+      : `${mockRule().allRequired ? '解答' : '選択'}: <span id="mock-answered-count">${mockAnsweredCount}</span> / ${mockRule().total} 問`;
     document.getElementById('mock-submit-btn').textContent = inExtra ? '答え合わせ' : '提出して採点';
 
     // 大分類ごとの選択状況（選択戦略の確認用）
@@ -1946,20 +2114,32 @@
       seen[q.genre].total++;
       if (answers.hasOwnProperty(q.id)) seen[q.genre].sel++;
     });
-    document.getElementById('mock-blocks').textContent = blocks
-      .map(g => `${g.replace('・建築物衛生管理', '')} ${seen[g].sel}/${seen[g].total}`)
+    document.getElementById('mock-blocks').textContent = mockRule().allRequired ? '' : blocks
+      .map(g => `${g.replace('・建築物衛生管理', '')} ${seen[g].sel}${mockRule().perGroup ? `/${mockRule().perGroup}` : `/${seen[g].total}`}`)
       .join('　');
     updateMockTimerLabel();
   }
 
+  // 図・表が必要な問題は原本画像を自動で表示し、それ以外は「原本画像を見る」ボタンで開く
   function renderQuestionImage(q) {
     const imgContainer = document.getElementById("q-image-container");
-    if (q.imageUrl) {
-        imgContainer.innerHTML = `<a href="${q.imageUrl}" target="_blank" rel="noopener" title="タップで拡大"><img src="${q.imageUrl}" class="question-image" alt="問題図" onerror="this.parentElement.style.display='none';"></a>`;
-        imgContainer.style.display = "block";
+    if (!q.imageUrl) {
+      imgContainer.innerHTML = "";
+      imgContainer.style.display = "none";
+      return;
+    }
+    const imgHtml = () => `<a href="${q.imageUrl}" target="_blank" rel="noopener" title="タップで拡大"><img src="${q.imageUrl}" class="question-image" alt="問題の原本画像" onerror="this.parentElement.innerHTML='<span class=&quot;noanswer-note&quot;>画像を読み込めませんでした</span>';"></a>`;
+    imgContainer.style.display = "block";
+    if (q.needsFigure) {
+      imgContainer.innerHTML = imgHtml();
     } else {
-        imgContainer.innerHTML = "";
-        imgContainer.style.display = "none";
+      imgContainer.innerHTML = '<button class="fig-toggle-btn">📄 原本画像を見る</button>';
+      const btn = imgContainer.querySelector('button');
+      btn.onclick = () => {
+        if (btn.dataset.open === '1') { imgContainer.innerHTML = '<button class="fig-toggle-btn">📄 原本画像を見る</button>'; renderQuestionImage(q); return; }
+        imgContainer.innerHTML = imgHtml() + '<div style="text-align:center;margin-bottom:12px;"><button class="fig-toggle-btn" id="fig-close-btn">閉じる</button></div>';
+        document.getElementById('fig-close-btn').onclick = () => renderQuestionImage(q);
+      };
     }
   }
 
@@ -1972,7 +2152,7 @@
     document.getElementById('cat-label').textContent = q.genre;
     document.getElementById('trend-label').style.display = 'none';
     document.getElementById('q-source').style.display = 'none';
-    document.getElementById('q-text').innerHTML = DOMPurify.sanitize(marked.parse(q.question));
+    document.getElementById('q-text').innerHTML = richText(q, q.question);
     renderQuestionImage(q);
 
     const optBox = document.getElementById('opt-box');
@@ -1980,7 +2160,7 @@
     q.options.forEach((opt, idx) => {
       const btn = document.createElement('button');
       btn.className = 'option-btn';
-      btn.innerHTML = DOMPurify.sanitize(marked.parse(`**${idx + 1}.** ${opt}`));
+      btn.innerHTML = optionHtml(q, idx, opt);
       if (answers[q.id] === idx) btn.classList.add('selected');
       btn.onclick = () => selectMockOption(idx);
       optBox.appendChild(btn);
@@ -1999,9 +2179,19 @@
   function selectMockOption(idx) {
     const q = filteredQuestions[curIdx];
     const answers = mockAnswerMap();
-    if (!answers.hasOwnProperty(q.id) && mockState.phase === 'exam' && Object.keys(sessionAnswers).length >= MAX_MOCK_SELECT) {
-      alert(`すでに${MAX_MOCK_SELECT}問を選択しています。\nこの問題を解くには、他の問題の「選択取消」を押して枠を空けてください。`);
-      return;
+    if (!answers.hasOwnProperty(q.id) && mockState.phase === 'exam') {
+      const rule = mockRule();
+      if (rule.perGroup) {
+        const inGroup = filteredQuestions.filter(x => x.genre === q.genre && sessionAnswers.hasOwnProperty(x.id)).length;
+        if (inGroup >= rule.perGroup) {
+          alert(`「${q.genre}」はすでに${rule.perGroup}問を選択しています。\nこの問題を解くには、同じ群の他の問題の「選択取消」を押して枠を空けてください。`);
+          return;
+        }
+      }
+      if (Object.keys(sessionAnswers).length >= rule.total) {
+        alert(`すでに${rule.total}問を選択しています。\nこの問題を解くには、他の問題の「選択取消」を押して枠を空けてください。`);
+        return;
+      }
     }
     answers[q.id] = idx;
     renderMockExamQuestion();
@@ -2026,13 +2216,12 @@
 
   // 模擬試験で解いた過去問を学習記録にも反映する（AI問題は除く）
   function recordLearning(q, selectedIdx) {
-    if (!allQuestions.some(aq => aq.id === q.id)) return;
+    if (!allQuestions.some(aq => aq.id === q.id) || !hasAnswerOf(q)) return;
     if (!userMemory.history[q.id]) userMemory.history[q.id] = { c: 0, w: 0 };
-    const isCorrect = selectedIdx === q.answer;
+    const isCorrect = isCorrectAnswer(q, selectedIdx);
     if (isCorrect) { userMemory.history[q.id].c++; userMemory.history[q.id].w = 0; }
     else userMemory.history[q.id].w++;
-    userMemory.stats.total++;
-    if (isCorrect) userMemory.stats.correct++;
+    bumpStats(isCorrect);
   }
 
   window.submitMockExam = function(force = false) {
@@ -2041,8 +2230,9 @@
     if (mockState.phase === 'exam') {
       const n = Object.keys(sessionAnswers).length;
       if (!force) {
-        const msg = n < MAX_MOCK_SELECT
-          ? `まだ${n}問しか選択していません（あと${MAX_MOCK_SELECT - n}問選べます）。\n誤答による減点はないので、25問すべて解答するのがおすすめです。\n\nこのまま提出しますか？`
+        const rule = mockRule();
+        const msg = n < rule.total
+          ? `まだ${n}問しか${rule.allRequired ? '解答' : '選択'}していません（あと${rule.total - n}問${rule.allRequired ? '解答できます' : '選べます'}）。\n誤答による減点はないので、${rule.total}問すべて解答するのがおすすめです。\n\nこのまま提出しますか？`
           : "提出して採点しますか？\n（提出後は解答を変更できません）";
         if (!confirm(msg)) return;
       }
@@ -2087,19 +2277,22 @@
       g.total++;
       if (sessionAnswers.hasOwnProperty(q.id)) {
         g.sel++; a.selCount++;
-        if (sessionAnswers[q.id] === q.answer) { g.selCorrect++; a.selCorrect++; }
+        if (isCorrectAnswer(q, sessionAnswers[q.id])) { g.selCorrect++; a.selCorrect++; }
       } else {
         g.unsel++; a.unselCount++;
         if (extra.hasOwnProperty(q.id)) {
           a.extraAnswered++;
-          if (extra[q.id] === q.answer) { g.extraCorrect++; a.extraCorrect++; }
+          if (isCorrectAnswer(q, extra[q.id])) { g.extraCorrect++; a.extraCorrect++; }
         }
       }
     });
-    // 35問のうち正解できた問題から25問を選んでいた場合の得点（選択が最適だった場合）
-    a.bestScore = Math.min(MAX_MOCK_SELECT, a.selCorrect + a.extraCorrect);
-    a.rate = Math.round((a.selCorrect / MAX_MOCK_SELECT) * 100);
-    a.passed = a.selCorrect >= MOCK_PASS_COUNT;
+    // 解けた問題の中から最適に選んでいた場合の得点（群ごとに上限がある科目は、群ごとに上限まで数える）
+    const rule = mockRule();
+    a.bestScore = rule.perGroup
+      ? a.order.reduce((sum, gName) => sum + Math.min(rule.perGroup, a.groups[gName].selCorrect + a.groups[gName].extraCorrect), 0)
+      : Math.min(rule.total, a.selCorrect + a.extraCorrect);
+    a.rate = Math.round((a.selCorrect / rule.total) * 100);
+    a.passed = a.selCorrect >= rule.pass;
     return a;
   }
 
@@ -2108,7 +2301,8 @@
     const record = {
       id: mockState.recordId || ("mock_" + Date.now()),
       date: nowLabel(),
-      score: { correct: a.selCorrect, total: MAX_MOCK_SELECT, rate: a.rate },
+      subject: mockState.subject,
+      score: { correct: a.selCorrect, total: mockRule().total, rate: a.rate },
       questions: filteredQuestions,
       answers: sessionAnswers,
       extraAnswers: mockState.extraAnswers,
@@ -2141,15 +2335,16 @@
     if (mockState.elapsedSec) info.push(`使用時間: ${formatDuration(mockState.elapsedSec)}${mockState.timeLimitSec ? ` / ${mockState.timeLimitSec / 60}分` : ''}`);
     if (info.length) html += `<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">${info.join('　')}</div>`;
 
-    html += `<div class="mock-setup-card"><h3>📊 分野別の選択と結果</h3><table class="mock-table">
-      <tr><th>大分類</th><th>出題</th><th>選択</th><th>正解</th><th>正答率</th>${showExtra ? '<th>非選択で<br>正解</th>' : ''}</tr>`;
+    const rule = mockRule();
+    html += `<div class="mock-setup-card"><h3>📊 分野別の${rule.allRequired ? '' : '選択と'}結果</h3><table class="mock-table">
+      <tr><th>${SUBJECTS[mockState.subject].genreLabel}</th><th>出題</th><th>${rule.allRequired ? '解答' : '選択'}</th><th>正解</th><th>正答率</th>${showExtra ? '<th>非選択で<br>正解</th>' : ''}</tr>`;
     a.order.forEach(gName => {
       const g = a.groups[gName];
-      html += `<tr><td>${gName}</td><td>${g.total}</td><td>${g.sel}</td><td>${g.selCorrect}</td><td>${g.sel ? pct(g.selCorrect, g.sel) + '%' : '-'}</td>${showExtra ? `<td>${g.extraCorrect} / ${g.unsel}</td>` : ''}</tr>`;
+      html += `<tr><td>${escapeHtml(gName)}</td><td>${g.total}</td><td>${g.sel}</td><td>${g.selCorrect}</td><td>${g.sel ? pct(g.selCorrect, g.sel) + '%' : '-'}</td>${showExtra ? `<td>${g.extraCorrect} / ${g.unsel}</td>` : ''}</tr>`;
     });
     html += '</table>';
-    if (a.selCount < MAX_MOCK_SELECT) {
-      html += `<div style="margin-top:8px;font-size:0.85rem;color:var(--danger-text);">⚠️ 選択が${a.selCount}問で、${MAX_MOCK_SELECT - a.selCount}問分の得点機会を使っていません。誤答の減点はないので、25問すべて解答しましょう。</div>`;
+    if (a.selCount < rule.total) {
+      html += `<div style="margin-top:8px;font-size:0.85rem;color:var(--danger-text);">⚠️ ${rule.allRequired ? '解答' : '選択'}が${a.selCount}問で、${rule.total - a.selCount}問分の得点機会を使っていません。誤答の減点はないので、${rule.total}問すべて解答しましょう。</div>`;
     }
     html += '</div>';
 
@@ -2160,12 +2355,12 @@
           <div><div style="font-size:0.8rem;">選んだ問題の正答率</div><div class="big">${pct(a.selCorrect, a.selCount)}%</div><div style="font-size:0.8rem;">${a.selCorrect} / ${a.selCount}問</div></div>
           <div><div style="font-size:0.8rem;">選ばなかった問題の正答率</div><div class="big">${pct(a.extraCorrect, a.unselCount)}%</div><div style="font-size:0.8rem;">${a.extraCorrect} / ${a.unselCount}問</div></div>
         </div>
-        <div style="font-size:0.9rem;">最適な25問を選んでいた場合: <b>${a.bestScore}問正解（${pct(a.bestScore, MAX_MOCK_SELECT)}%）</b>　実際: ${a.selCorrect}問</div>`;
+        <div style="font-size:0.9rem;">最適な${rule.total}問を選んでいた場合: <b>${a.bestScore}問正解（${pct(a.bestScore, rule.total)}%）</b>　実際: ${a.selCorrect}問</div>`;
       if (loss === 0) {
         html += `<div style="margin-top:8px;color:var(--success-text);font-weight:bold;">✨ 選択は最適でした。解ける問題をきちんと選べています。</div>`;
       } else {
-        html += `<div style="margin-top:8px;color:var(--trend-text);font-weight:bold;">選択を入れ替えていれば、あと${loss}問（正答率 +${pct(loss, MAX_MOCK_SELECT)}%）取れていました。</div>`;
-        if (!a.passed && a.bestScore >= MOCK_PASS_COUNT) {
+        html += `<div style="margin-top:8px;color:var(--trend-text);font-weight:bold;">選択を入れ替えていれば、あと${loss}問（正答率 +${pct(loss, rule.total)}%）取れていました。</div>`;
+        if (!a.passed && a.bestScore >= rule.pass) {
           html += `<div style="margin-top:4px;color:var(--danger-text);font-weight:bold;">⚠️ 選び方次第で合格ラインに届いていました。</div>`;
         }
         html += `<div style="margin-top:6px;font-size:0.85rem;">選んで不正解: ${a.selCount - a.selCorrect}問 ／ 選ばずに正解できた: ${a.extraCorrect}問。下の一覧の「非選択」の正解問題と「選択」の不正解問題を見比べると、選び方のクセが分かります。</div>`;
@@ -2271,9 +2466,10 @@
     const modelName = useLiteModel ? 'gemini-3.5-flash-lite' : 'gemini-3.5-flash';
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     
-    let topicHint = "衛生工学全般";
+    const sj = SUBJECTS[currentSubject];
+    let topicHint = `${sj.examName}の全般`;
     if (genre && genre !== "all") {
-        topicHint = `衛生工学部門の「${genre}」分野全般`;
+        topicHint = `${sj.examName}の「${genre}」分野全般`;
         if (topic && topic !== "all") {
             topicHint += `（特に「${topic}」にフォーカス）`;
         } else if (subgenre && subgenre !== "all") {
@@ -2288,7 +2484,7 @@
     }
     const refText = refQuestions.map(q => `・${q}`).join('\n');
 
-    const prompt = `あなたは技術士（衛生工学部門）の試験委員です。
+    const prompt = `あなたは${sj.examName}の試験委員です。
 以下の【過去の出題例】を分析し、難易度、文章の形式、専門用語のレベルを模倣した上で、同じ【五肢択一問題】の新しいオリジナル予想問題を、異なる切り口で「5問」生成してください。
 
 【テーマ】
@@ -2348,6 +2544,8 @@ ${refText}${getTrendPrompt(genre)}
         data.questions.forEach((qData, idx) => {
             filteredQuestions.push({
               id: "AI-" + Date.now() + "-" + idx,
+              subject: currentSubject,
+              hasAnswer: true,
               year: "AI生成予想",
               qNum: `Q${idx+1}`,
               genre: genre !== "all" ? genre : "AI総合",
@@ -2386,24 +2584,22 @@ ${refText}${getTrendPrompt(genre)}
 
     const q = filteredQuestions[curIdx];
 
-    document.getElementById('prog-label').textContent = isMockMode ? `問 ${curIdx + 1}` : `問 ${curIdx + 1} / ${filteredQuestions.length}`;
-    document.getElementById('cat-label').textContent = (q.topic && q.topic !== q.subgenre)
-      ? `${q.genre} > ${q.subgenre} > ${q.topic}`
-      : `${q.genre} > ${q.subgenre}`;
+    document.getElementById('prog-label').textContent = `問 ${curIdx + 1} / ${filteredQuestions.length}`;
+    document.getElementById('cat-label').textContent = [q.genre, q.subgenre, (q.topic && q.topic !== q.subgenre) ? q.topic : '']
+      .filter(Boolean).join(' > ');
     
-    // 問題文をMarkdown/LaTeXとしてパース
-    const qTextEl = document.getElementById('q-text');
-    qTextEl.innerHTML = DOMPurify.sanitize(marked.parse(q.question));
+    // DB由来の問題はそのまま表示し、AI生成の問題はMarkdown/LaTeXとして表示する
+    document.getElementById('q-text').innerHTML = richText(q, q.question);
     
     const sourceEl = document.getElementById('q-source');
-    if (q.year === "AI予想 (腕試し)" || (isAiMode && !isMockMode)) {
+    if (q.year === "AI予想 (腕試し)" || isAiMode) {
       sourceEl.innerHTML = '✨ AIオリジナル予想問題';
       sourceEl.style.color = '#a855f7';
       sourceEl.style.borderColor = 'rgba(168, 85, 247, 0.3)';
       sourceEl.style.background = 'rgba(168, 85, 247, 0.05)';
       sourceEl.style.display = 'inline-flex';
     } else {
-      sourceEl.innerHTML = `📖 出典: ${q.year} ${q.qNum}`;
+      sourceEl.innerHTML = `📖 出典: ${escapeHtml(q.year)} ${escapeHtml(q.qNum)}`;
       sourceEl.style.color = 'var(--text-muted)';
       sourceEl.style.borderColor = 'var(--border)';
       sourceEl.style.background = 'var(--bg)';
@@ -2411,12 +2607,12 @@ ${refText}${getTrendPrompt(genre)}
     }
 
     const trendLabel = document.getElementById('trend-label');
-    if (!isAiMode && !isMockMode && q.topic && topicTrendScores[q.topic]) {
-        const lv = topicTrendScores[q.topic].level;
-        const stars = '★'.repeat(lv) + '☆'.repeat(5 - lv);
+    const trend = !isAiMode && q.trendKey ? topicTrendScores[q.trendKey] : null;
+    if (trend) {
+        const stars = '★'.repeat(trend.level) + '☆'.repeat(5 - trend.level);
         trendLabel.textContent = `頻出度 ${stars}`;
         trendLabel.className = 'trend-badge'; 
-        trendLabel.classList.add(`trend-lv${lv}`);
+        trendLabel.classList.add(`trend-lv${trend.level}`);
         trendLabel.style.display = "inline-block";
     } else {
         trendLabel.style.display = "none";
@@ -2428,24 +2624,19 @@ ${refText}${getTrendPrompt(genre)}
     optBox.innerHTML = ''; 
     
     const hasAnswered = sessionAnswers.hasOwnProperty(q.id);
+    const correctSet = correctIndexes(q);
 
     q.options.forEach((opt, idx) => {
         const btn = document.createElement('button');
         btn.className = 'option-btn';
-        
-        // 選択肢もMarkdown/LaTeXとしてパース
-        btn.innerHTML = DOMPurify.sanitize(marked.parse(`**${idx + 1}.** ${opt}`));
+        btn.innerHTML = optionHtml(q, idx, opt);
         
         if (hasAnswered) {
           btn.disabled = true;
-          if (idx === q.answer) btn.classList.add("correct");
-          if (sessionAnswers[q.id] === idx && idx !== q.answer) btn.classList.add("wrong");
+          if (correctSet.includes(idx)) btn.classList.add("correct");
+          if (sessionAnswers[q.id] === idx && !correctSet.includes(idx) && hasAnswerOf(q)) btn.classList.add("wrong");
         } else {
-          if (isMockMode && mockAnsweredCount >= MAX_MOCK_SELECT) {
-             btn.disabled = true;
-          } else {
-             btn.onclick = () => selectOption(idx);
-          }
+          btn.onclick = () => selectOption(idx);
         }
         
         optBox.appendChild(btn);
@@ -2464,16 +2655,24 @@ ${refText}${getTrendPrompt(genre)}
     const nextBtn = document.getElementById('next-btn');
     
     if (hasAnswered) {
-      const isCorrect = sessionAnswers[q.id] === q.answer;
       const resStatus = document.getElementById('res-status');
-      resStatus.innerHTML = isCorrect ? '<span style="color:var(--success-text);">⭕ 正解</span>' : '<span style="color:var(--danger-text);">❌ 不正解</span>';
+      const isCorrect = isCorrectAnswer(q, sessionAnswers[q.id]);
+      if (!hasAnswerOf(q)) {
+        resStatus.innerHTML = '<span style="color:var(--trend-text);">ℹ️ 正答が未登録のため、正誤は判定できません</span>';
+      } else if (q.allCorrect) {
+        resStatus.innerHTML = '<span style="color:var(--success-text);">⭕ 全員正解（公式に不適切な出題とされ、全員に得点）</span>';
+      } else if (isCorrect) {
+        resStatus.innerHTML = '<span style="color:var(--success-text);">⭕ 正解</span>' + (correctIndexes(q).length > 1 ? `<span style="font-size:0.85rem;color:var(--text-muted);font-weight:normal;">（正解は ${correctLabel(q)}）</span>` : '');
+      } else {
+        resStatus.innerHTML = '<span style="color:var(--danger-text);">❌ 不正解</span>' + (correctIndexes(q).length > 1 ? `<span style="font-size:0.85rem;color:var(--text-muted);font-weight:normal;">（正解は ${correctLabel(q)}）</span>` : '');
+      }
       
       renderContent(q.explanation, 'exp-text');
       document.getElementById('exp-box').classList.add('show');
       
       if (savedExplanations[q.id]) {
         showAIExplanation(q);
-      } else if (!isAiMode || isMockMode) {
+      } else if (!isAiMode) {
         document.getElementById('ai-explain-btn').style.display = 'block';
       }
       updateNoteButton(document.getElementById('note-link-btn'), q);
@@ -2481,16 +2680,7 @@ ${refText}${getTrendPrompt(genre)}
       nextBtn.disabled = false;
       nextBtn.style.background = ''; 
 
-      if (isMockMode) {
-        if (mockAnsweredCount >= MAX_MOCK_SELECT) {
-          nextBtn.textContent = '25問選択完了！ 採点結果を見る';
-          nextBtn.onclick = showResults;
-          nextBtn.style.background = 'var(--danger-btn)';
-        } else {
-          nextBtn.textContent = '次の問題へ';
-          nextBtn.onclick = goNext;
-        }
-      } else if (isAiMode && curIdx === filteredQuestions.length - 1) {
+      if (isAiMode && curIdx === filteredQuestions.length - 1) {
           nextBtn.textContent = '次のAI予想問題へ';
           nextBtn.onclick = () => generateAIQuestionsBatch();
       } else if (curIdx === filteredQuestions.length - 1) {
@@ -2501,17 +2691,10 @@ ${refText}${getTrendPrompt(genre)}
           nextBtn.onclick = goNext;
       }
     } else {
-      if (isMockMode && mockAnsweredCount >= MAX_MOCK_SELECT) {
-         nextBtn.disabled = false;
-         nextBtn.textContent = '25問選択完了！ 採点結果を見る';
-         nextBtn.onclick = showResults;
-         nextBtn.style.background = 'var(--danger-btn)';
-      } else {
-         nextBtn.disabled = true;
-         nextBtn.textContent = '回答を選択してください';
-         nextBtn.onclick = null;
-         nextBtn.style.background = '';
-      }
+      nextBtn.disabled = true;
+      nextBtn.textContent = '回答を選択してください';
+      nextBtn.onclick = null;
+      nextBtn.style.background = '';
     }
   }
 
@@ -2519,22 +2702,14 @@ ${refText}${getTrendPrompt(genre)}
     const q = filteredQuestions[curIdx];
     if(sessionAnswers.hasOwnProperty(q.id)) return;
     
-    if (isMockMode && !sessionAnswers.hasOwnProperty(q.id)) {
-      if (mockAnsweredCount >= MAX_MOCK_SELECT) {
-        alert("すでに25問選択済みです。他の問題の解答を変更することはできません。");
-        return;
-      }
-      mockAnsweredCount++;
-    }
-
     sessionAnswers[q.id] = selectedIdx; 
     
-    if (!isAiMode && !isMockMode) { 
+    if (!isAiMode && hasAnswerOf(q)) { 
       if (!userMemory.history[q.id]) {
         userMemory.history[q.id] = { c: 0, w: 0 };
       }
       
-      const isCorrect = selectedIdx === q.answer;
+      const isCorrect = isCorrectAnswer(q, selectedIdx);
       if (isCorrect) {
           userMemory.history[q.id].c++;
           userMemory.history[q.id].w = 0; 
@@ -2542,8 +2717,7 @@ ${refText}${getTrendPrompt(genre)}
           userMemory.history[q.id].w++;
       }
       
-      userMemory.stats.total++;
-      if (isCorrect) userMemory.stats.correct++;
+      bumpStats(isCorrect);
       saveUserData();
     }
 
@@ -2556,8 +2730,13 @@ ${refText}${getTrendPrompt(genre)}
     const modelName = useLiteModel ? 'gemini-3.5-flash-lite' : 'gemini-3.5-flash';
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-    const prompt = `あなたは技術士（衛生工学部門）の専門講師です。
-以下の過去問について、なぜその選択肢が正解なのか、また他の選択肢のどこが間違っているのかを詳細に解説してください。
+    const sj = SUBJECTS[q.subject] || SUBJECTS.senmon;
+    const answerText = q.allCorrect
+      ? '公式には不適切な出題として全員正解の扱いになりました。どの記述が不適切だったのかを中心に解説してください。'
+      : `選択肢 ${correctLabel(q)}`;
+    const figureNote = q.needsFigure ? '\n※この問題には図や表があります。添付した問題の原本画像を参照してください。' : '';
+    const prompt = `あなたは${sj.examName}の専門講師です。
+以下の過去問について、なぜその選択肢が正解なのか、また他の選択肢のどこが間違っているのかを詳細に解説してください。${figureNote}
 
 ※出力形式についての指示：
 - 見出し（### など）、太字（**文字**）、箇条書き等のMarkdown記法を用いて、読みやすく構造化してください。
@@ -2570,12 +2749,26 @@ ${q.question}
 ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
 
 【正解】
-選択肢 ${q.answer + 1}`;
+${answerText}`;
+
+    const parts = [{ text: prompt }];
+    // 図・表が必要な問題は、原本の画像もAIに渡す
+    if (q.needsFigure && q.imageUrl) {
+      try {
+        const imgRes = await fetch(q.imageUrl);
+        if (imgRes.ok) {
+          const bytes = new Uint8Array(await imgRes.arrayBuffer());
+          let bin = '';
+          for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+          parts.push({ inline_data: { mime_type: 'image/png', data: btoa(bin) } });
+        }
+      } catch (e) { console.warn("問題画像を添付できませんでした:", e); }
+    }
 
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      body: JSON.stringify({ contents: [{ parts }] })
     });
     const result = await response.json();
 
@@ -2653,6 +2846,7 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
 
     userMemory.savedSession = {
       date: `${yyyy}/${MM}/${dd} ${hh}:${mm}`,
+      subject: (mockState && mockState.subject) || currentSubject,
       isMockMode: isMockMode,
       isAiMode: isAiMode,
       filteredQuestions: filteredQuestions,
@@ -2676,21 +2870,35 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
     }
   };
 
-  window.resumeSession = function() {
-    if (!userMemory.savedSession) return;
+  window.resumeSession = async function() {
+    const saved = userMemory.savedSession;
+    if (!saved) return;
+
+    // 中断したときの科目に切り替える（旧形式のデータは専門科目）
+    const savedKey = SUBJECTS[saved.subject] ? saved.subject : 'senmon';
+    if (savedKey !== currentSubject) {
+      try {
+        await activateSubject(savedKey);
+        updateMemoryUI();
+      } catch (e) {
+        alert(`${SUBJECTS[savedKey].label}のデータを読み込めませんでした。\n${e.message}`);
+        return;
+      }
+    }
 
     window.isViewingPastMock = false;
-    isMockMode = userMemory.savedSession.isMockMode;
-    isAiMode = userMemory.savedSession.isAiMode;
-    filteredQuestions = userMemory.savedSession.filteredQuestions;
-    sessionAnswers = userMemory.savedSession.sessionAnswers;
-    curIdx = userMemory.savedSession.curIdx;
-    mockAnsweredCount = userMemory.savedSession.mockAnsweredCount || 0;
-    mockState = userMemory.savedSession.mockState || null;
+    isMockMode = saved.isMockMode;
+    isAiMode = saved.isAiMode;
+    filteredQuestions = saved.filteredQuestions;
+    sessionAnswers = saved.sessionAnswers;
+    curIdx = saved.curIdx;
+    mockAnsweredCount = saved.mockAnsweredCount || 0;
+    mockState = saved.mockState || null;
     if (isMockMode && !mockState) {
       // 旧バージョンの腕試しモードで中断したデータ
       mockState = { phase: 'exam', sourceLabel: 'AI予想問題', timeLimitSec: 0, remainingSec: 0, elapsedSec: 0, extraAnswers: {}, recordId: null };
     }
+    if (mockState && !mockState.subject) mockState.subject = savedKey;
 
     document.getElementById('ai-loading').style.display = 'none';
     document.getElementById('q-text').style.display = 'block';
@@ -2740,17 +2948,18 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
     if (isMockMode && mockState) {
       const a = computeMockAnalysis();
       document.getElementById("score-text").textContent = `${a.rate}%`;
+      const rule = mockRule();
       const passText = a.passed
-        ? `<div style='color: var(--success-text); margin-top:12px;'>🎉 合格ライン（${MOCK_PASS_COUNT}問・50%以上）に達しています！</div>`
-        : `<div style='color: var(--trend-text); margin-top:12px;'>💪 合格ライン（${MOCK_PASS_COUNT}問・50%以上）まであと${MOCK_PASS_COUNT - a.selCorrect}問！復習しましょう。</div>`;
-      document.getElementById("score-detail").innerHTML = `${a.selCorrect} / ${MAX_MOCK_SELECT} 問 正解` + passText;
+        ? `<div style='color: var(--success-text); margin-top:12px;'>🎉 合格ライン（${rule.pass}問・50%以上）に達しています！</div>`
+        : `<div style='color: var(--trend-text); margin-top:12px;'>💪 合格ライン（${rule.pass}問・50%以上）まであと${rule.pass - a.selCorrect}問！復習しましょう。</div>`;
+      document.getElementById("score-detail").innerHTML = `${a.selCorrect} / ${rule.total} 問 正解` + passText;
       renderMockAnalysis(a);
     } else {
       analysisBox.style.display = 'none';
       analysisBox.innerHTML = '';
       let correctCount = 0;
       const questionsToEval = filteredQuestions.filter(q => sessionAnswers.hasOwnProperty(q.id));
-      questionsToEval.forEach(q => { if (sessionAnswers[q.id] === q.answer) correctCount++; });
+      questionsToEval.forEach(q => { if (isCorrectAnswer(q, sessionAnswers[q.id])) correctCount++; });
       const count = questionsToEval.length;
       const rate = count > 0 ? Math.round((correctCount / count) * 100) : 0;
       document.getElementById("score-text").textContent = `${rate}%`;
@@ -2789,12 +2998,13 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
         const item = document.createElement('div');
         item.className = 'mock-history-item';
         
-        const isPass = exam.score.correct >= MOCK_PASS_COUNT;
+        const examKey = SUBJECTS[exam.subject] ? exam.subject : 'senmon';
+        const isPass = exam.score.correct >= mockRuleOf(examKey).pass;
         const scoreColor = isPass ? 'var(--success-text)' : 'var(--trend-text)';
 
         item.innerHTML = `
           <div class="mock-history-info">
-            <span class="mock-history-date">📅 ${exam.date}</span>
+            <span class="mock-history-date">📅 ${exam.date}　<b>${SUBJECTS[examKey].short}</b></span>
             <span class="mock-history-score" style="color: ${scoreColor}">${exam.score.rate}% (${exam.score.correct}/${exam.score.total}問)${isPass ? ' 合格' : ''}</span>
             ${exam.bestScore != null ? `<span class="mock-history-date">最適な選択なら ${exam.bestScore}問</span>` : ''}
             ${exam.sourceLabel ? `<span class="mock-history-date">${exam.sourceLabel}</span>` : ''}
@@ -2826,6 +3036,7 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
     const extraAnswers = exam.extraAnswers || {};
     mockState = {
       phase: exam.bestScore != null ? 'done' : 'graded',
+      subject: SUBJECTS[exam.subject] ? exam.subject : 'senmon',
       sourceLabel: exam.sourceLabel || '',
       timeLimitSec: exam.timeLimitSec || 0,
       remainingSec: 0,
@@ -2898,7 +3109,7 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
       const isSelected = sessionAnswers.hasOwnProperty(q.id);
       const isAnswered = isSelected || extraAnswers.hasOwnProperty(q.id);
       const userAnsIdx = isSelected ? sessionAnswers[q.id] : (isAnswered ? extraAnswers[q.id] : -1);
-      const isCorrect = isAnswered && userAnsIdx === q.answer;
+      const isCorrect = isAnswered && isCorrectAnswer(q, userAnsIdx);
       
       if (filterMode === 'wrong' && isCorrect) return;
       
@@ -2912,16 +3123,18 @@ ${q.options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
       
       if (isAnswered) {
           statusClass = isCorrect ? 'hi-correct' : 'hi-wrong';
-          markText = isCorrect ? '〇 正解' : '× 不正解';
+          markText = !hasAnswerOf(q) ? '正答未登録' : (isCorrect ? '〇 正解' : '× 不正解');
           userAnsColor = isCorrect ? 'var(--success-text)' : 'var(--danger-text)';
       }
 
       item.className = `history-item ${statusClass}`;
       
-      // 問題文や選択肢もMarkdown/LaTeXパース
-      const qTextHtml = DOMPurify.sanitize(marked.parse(q.question));
-      const userAnsHtml = isAnswered ? DOMPurify.sanitize(marked.parse(q.options[userAnsIdx])) : "（未回答）";
-      const correctAnsHtml = DOMPurify.sanitize(marked.parse(q.options[q.answer]));
+      const qTextHtml = richText(q, q.question);
+      const userAnsHtml = isAnswered ? richText(q, `${userAnsIdx + 1}. ${q.options[userAnsIdx]}`) : "（未回答）";
+      let correctAnsHtml;
+      if (!hasAnswerOf(q)) correctAnsHtml = '（正答未登録）';
+      else if (q.allCorrect) correctAnsHtml = '全員正解扱い（公式に不適切な出題とされました）';
+      else correctAnsHtml = correctIndexes(q).map(i => richText(q, `${i + 1}. ${q.options[i]}`)).join('<br>');
 
       let displayNum = index + 1;
       if (isMockMode) {
