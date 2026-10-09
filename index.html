@@ -395,7 +395,7 @@
           <br>・専門: 35問から25問を選んで解答（120分）。標準の「AI予想問題 35問すべて新作」のほか、AI予想＋過去問、過去問ミックス・年度指定から選べます。
           <br>・基礎: 5群×6問から各群3問ずつ計15問を選んで解答（60分）。
           <br>・適性: 15問すべてに解答（60分）。
-          <br>基礎・適性は過去問ミックス・年度指定（APIキー不要）で出題します。専門・基礎では、試験後に「選ばなかった問題」も解くと、選び方が最適だったか（何点取れていたか）を確認できます。</li>
+          <br>基礎・適性は過去問ミックス・年度指定（APIキー不要）で出題します。ミックスとAI出題では、同じテーマの問題が1回の試験に重ならないようにし、直近の腕試しで出た問題・テーマは出にくくなります（記録は腕試しの設定画面でリセットできます）。専門・基礎では、試験後に「選ばなかった問題」も解くと、選び方が最適だったか（何点取れていたか）を確認できます。</li>
       </ul>
       <div class="warning-text" style="margin-top: 12px;">
         ※AI機能（詳細解説・予想問題・腕試しモードのAI出題）を利用するには、ご自身で「APIキー」を取得してアプリに設定する必要があります（無料）。詳しくは下記の手順をご覧ください。
@@ -714,7 +714,9 @@
       <div id="mock-strategy"></div>
     </div>
 
+    <div id="mock-seen-note" style="font-size: 0.8rem; color: var(--text-muted); margin: 12px 0 8px; line-height: 1.5;"></div>
     <button class="nav-btn" onclick="startMockExam()" style="background: linear-gradient(135deg, #f59e0b, #ea580c);">試験を開始する</button>
+    <button class="nav-btn secondary" onclick="resetMockSeen()" style="margin-top: 12px; font-size: 0.85rem;">「最近出た問題」の記録をリセット</button>
     <button class="nav-btn secondary" onclick="goToStart()" style="margin-top: 12px;">戻る</button>
   </div>
 
@@ -779,6 +781,8 @@
     statsBy: {},
     history: {},
     mockExams: [],
+    mockSeen: {},      // 科目ごとの、直近の腕試しで出た過去問のID（次回は出にくくする）
+    mockThemes: {},    // 科目ごとの、直近の腕試しでAIが扱ったテーマ（次回は避ける）
     savedSession: null 
   };
 
@@ -947,6 +951,8 @@
         if (!userMemory.mockExams) userMemory.mockExams = [];      
         if (!userMemory.savedSession) userMemory.savedSession = null; 
         if (!userMemory.history) userMemory.history = {};
+        if (!userMemory.mockSeen) userMemory.mockSeen = {};
+        if (!userMemory.mockThemes) userMemory.mockThemes = {};
         // 旧形式の通算成績（専門科目のみ）を科目別に引き継ぐ
         if (!userMemory.statsBy) {
           userMemory.statsBy = { senmon: { total: (userMemory.stats || {}).total || 0, correct: (userMemory.stats || {}).correct || 0 } };
@@ -1703,6 +1709,132 @@
   function mockRuleOf(key) { return MOCK_RULES[key] || MOCK_RULES.senmon; }
   function mockRule() { return mockRuleOf(mockState && mockState.subject); }
 
+  // --- 同じような問題が続かないようにする仕組み ---
+  const MOCK_SEEN_MAX_IDS = 400;      // 記憶する過去問の数（専門なら約11回分）
+  const MOCK_SEEN_MAX_THEMES = 150;   // 記憶するAIテーマの数
+  const SIMILAR_THRESHOLD = 0.28;     // 文章の似かた（2文字の並びの一致率）。同じテーマの過去問どうしは約0.57、別テーマは0.14以下
+
+  function weightedPick(items, weights) {
+    const total = weights.reduce((a, b) => a + b, 0);
+    if (!(total > 0)) return items[Math.floor(Math.random() * items.length)];
+    let r = Math.random() * total;
+    for (let i = 0; i < items.length; i++) { r -= weights[i]; if (r <= 0) return items[i]; }
+    return items[items.length - 1];
+  }
+
+  // 問題文＋選択肢を2文字ずつに区切った集合（文章の似かたの比較用）
+  function bigramsOf(text) {
+    const t = String(text).replace(/[\s\u3000，。、．・「」（）()：:；;\-－]/g, '');
+    const set = new Set();
+    for (let i = 0; i < t.length - 1; i++) set.add(t.slice(i, i + 2));
+    return set;
+  }
+  function questionBigrams(q) {
+    if (!q._bg) q._bg = bigramsOf(q.question + (q.options || []).join(''));
+    return q._bg;
+  }
+  function jaccard(a, b) {
+    if (a.size === 0 || b.size === 0) return 0;
+    let inter = 0;
+    a.forEach(x => { if (b.has(x)) inter++; });
+    return inter / (a.size + b.size - inter);
+  }
+  function isSimilarToAny(set, others) {
+    return others.some(o => jaccard(set, o) >= SIMILAR_THRESHOLD);
+  }
+
+  function seenIdSet(subject) { return new Set((userMemory.mockSeen || {})[subject] || []); }
+  function recentThemeSet(subject) { return new Set(((userMemory.mockThemes || {})[subject] || []).map(x => x.t)); }
+
+  // 出題した問題・テーマを記録する（次回以降の腕試しで出にくくするため）
+  function rememberMockQuestions(questions, subject) {
+    userMemory.mockSeen = userMemory.mockSeen || {};
+    userMemory.mockThemes = userMemory.mockThemes || {};
+    const ids = new Map();
+    [...(userMemory.mockSeen[subject] || []), ...questions.filter(q => !String(q.id).startsWith('MockAI-')).map(q => q.id)]
+      .forEach(id => { ids.delete(id); ids.set(id, 1); });
+    userMemory.mockSeen[subject] = Array.from(ids.keys()).slice(-MOCK_SEEN_MAX_IDS);
+    const themes = (userMemory.mockThemes[subject] || []).concat(
+      questions.filter(q => String(q.id).startsWith('MockAI-') && q.theme).map(q => ({ t: q.theme, s: String(q.question).slice(0, 60) })));
+    userMemory.mockThemes[subject] = themes.slice(-MOCK_SEEN_MAX_THEMES);
+    saveUserData();
+  }
+
+  window.resetMockSeen = function() {
+    if (!confirm("「最近の腕試しで出た問題・テーマ」の記録を消しますか？\n（次の腕試しで、これまでに出た問題も同じように出題されます）")) return;
+    userMemory.mockSeen[currentSubject] = [];
+    userMemory.mockThemes[currentSubject] = [];
+    saveUserData();
+    updateMockSeenNote();
+  };
+
+  function updateMockSeenNote() {
+    const ids = (userMemory.mockSeen[currentSubject] || []).length;
+    const themes = (userMemory.mockThemes[currentSubject] || []).length;
+    document.getElementById('mock-seen-note').textContent = (ids + themes) === 0
+      ? '同じテーマの問題が1回の試験に重ならないように出題します。'
+      : `同じテーマの問題が1回の試験に重ならないように出題します。直近の腕試しで出た問題${ids}問・AIテーマ${themes}件は、次回は出にくくしています。`;
+  }
+
+  // 過去問ミックス: 問題番号ごとに1問ずつ選ぶ。同じテーマ・似た文章・直近の腕試しで出た問題は選ばれにくくする
+  function pickMixQuestions() {
+    const seen = seenIdSet(currentSubject);
+    const bySlot = {};
+    allQuestions.forEach(q => { (bySlot[slotKey(q)] = bySlot[slotKey(q)] || []).push(q); });
+    const picked = [];
+    const usedIssue = new Set();
+    const usedKey = {};
+    shuffleArray(Object.keys(bySlot)).forEach(sk => {
+      const cands = bySlot[sk];
+      const pickedBigrams = picked.map(questionBigrams);
+      const weights = cands.map(q => {
+        let w = 1;
+        if (q.issue && usedIssue.has(q.issue)) w *= 0.02;                       // 同じテーマ
+        if (isSimilarToAny(questionBigrams(q), pickedBigrams)) w *= 0.02;       // 文章が似ている
+        w *= Math.pow(0.4, usedKey[q.trendKey] || 0);                            // 同じ細目・小分類が続く
+        if (seen.has(q.id)) w *= 0.15;                                           // 直近の腕試しで出た
+        return w;
+      });
+      const q = weightedPick(cands, weights);
+      picked.push(q);
+      if (q.issue) usedIssue.add(q.issue);
+      usedKey[q.trendKey] = (usedKey[q.trendKey] || 0) + 1;
+    });
+    return picked.sort((a, b) => slotOrder(a) - slotOrder(b));
+  }
+
+  // AI問題用に、過去問のテーマ（Issue）を重複しないように選ぶ（よく出るテーマほど選ばれやすい。直近に使ったテーマは避ける）
+  function pickThemeSeeds(genre, count, usedThemes) {
+    const recent = recentThemeSet(currentSubject);
+    const groups = {};
+    allQuestions.forEach(q => { if (q.genre === genre && q.issue) (groups[q.issue] = groups[q.issue] || []).push(q); });
+    const issues = Object.keys(groups);
+    const seeds = [];
+    for (let n = 0; n < count && issues.length > 0; n++) {
+      const avail = issues.filter(i => !usedThemes.has(i));
+      const pool = avail.length ? avail : issues;
+      const theme = weightedPick(pool, pool.map(i => Math.pow(groups[i].length, 0.7) * (recent.has(i) ? 0.1 : 1)));
+      usedThemes.add(theme);
+      const sample = groups[theme][Math.floor(Math.random() * groups[theme].length)];
+      seeds.push({ theme, hint: sample.question.replace(/\s+/g, ' ').slice(0, 70) });
+    }
+    return seeds;
+  }
+
+  // AI問題と組み合わせる過去問を選ぶ（AIのテーマと重ならないもの・直近に出ていないものを優先）
+  function pickPastForAI(genre, n, usedThemes) {
+    const seen = seenIdSet(currentSubject);
+    const pool = allQuestions.filter(q => q.genre === genre);
+    const picked = [];
+    for (let k = 0; k < n && picked.length < pool.length; k++) {
+      const rest = pool.filter(q => !picked.includes(q));
+      const q = weightedPick(rest, rest.map(x => (x.issue && usedThemes.has(x.issue) ? 0.02 : 1) * (seen.has(x.id) ? 0.15 : 1)));
+      picked.push(q);
+      if (q.issue) usedThemes.add(q.issue);
+    }
+    return picked;
+  }
+
   // 問題番号から科目の記号を除いた位置（専門 "Ⅲ-5"→"5"、基礎 "Ⅰ-2-3"→"2-3"、適性 "Ⅱ-7"→"7"）
   function slotKey(q) { return String(q.qNum).replace(/^[ⅠⅡⅢⅣ]\s*-\s*/, ''); }
   function slotOrder(q) { return slotKey(q).split('-').reduce((acc, n) => acc * 100 + (parseInt(n, 10) || 0), 0); }
@@ -1796,6 +1928,7 @@
     document.getElementById('mock-time').value = String(rule.minutes);
 
     renderMockStrategy();
+    updateMockSeenNote();
     switchScreen('screen-mock-setup');
     window.scrollTo(0, 0);
   };
@@ -1809,11 +1942,8 @@
 
     let questions = [];
     if (source === 'mix') {
-      // 問題番号（スロット）ごとに、各年度からランダムに1問ずつ抜き出す
-      const bySlot = {};
-      allQuestions.forEach(q => { (bySlot[slotKey(q)] = bySlot[slotKey(q)] || []).push(q); });
-      Object.values(bySlot).forEach(cands => questions.push(cands[Math.floor(Math.random() * cands.length)]));
-      questions.sort((a, b) => slotOrder(a) - slotOrder(b));
+      // 問題番号（スロット）ごとに1問ずつ。同じテーマ・似た問題・直近に出た問題は避ける
+      questions = pickMixQuestions();
     } else if (source.startsWith('year:')) {
       const y = source.slice(5);
       questions = allQuestions.filter(q => q.year === y).sort((a, b) => slotOrder(a) - slotOrder(b));
@@ -1852,6 +1982,8 @@
       extraAnswers: {},
       recordId: null
     };
+
+    rememberMockQuestions(questions, currentSubject);
 
     document.getElementById('ai-loading').style.display = 'none';
     document.getElementById('q-text').style.display = 'block';
@@ -1960,23 +2092,54 @@
     try {
       updateProgress("準備中...", 0);
       const result = [];
+      const usedThemes = new Set();      // この試験で扱うテーマ（Issue）。重複させない
+      const examBigrams = [];            // この試験の問題の文章（似た問題の検出用）
+      let examPrevText = "";             // この試験で作成済みの問題（AIに重複を避けさせる）
       for (let gi = 0; gi < plan.length; gi++) {
         const { genre, ai, past } = plan[gi];
         const shortName = genre.replace('・建築物衛生管理', '');
         const batches = Math.ceil(ai / AI_BATCH_SIZE);
-        let prevText = "";
         const genreQuestions = [];
         for (let bi = 0; bi < batches; bi++) {
           const count = Math.min(AI_BATCH_SIZE, ai - bi * AI_BATCH_SIZE);
           updateProgress(`「${shortName}」を作成中 (${bi + 1}/${batches})...`, 0);
-          const batch = await fetchMockAIBatch(genre, count, apiKey, false, prevText, retryCallback);
+          // 過去問のテーマを1問ずつ指定して作らせる（同じテーマ・よく出る話題ばかりになるのを防ぐ）
+          const seeds = pickThemeSeeds(genre, count, usedThemes);
+          const batch = await fetchMockAIBatch(genre, count, apiKey, false, examPrevText, retryCallback, seeds);
+
+          // すでに作成した問題と似すぎているものは、別のテーマで作り直す（最大2回まで）
+          const findSimilar = () => {
+            const seenInBatch = [];
+            const idx = [];
+            batch.forEach((q, i) => {
+              const bg = bigramsOf(q.question + (q.options || []).join(''));
+              if (isSimilarToAny(bg, examBigrams) || isSimilarToAny(bg, seenInBatch)) idx.push(i);
+              seenInBatch.push(bg);
+            });
+            return idx;
+          };
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const dupIdx = findSimilar();
+            if (dupIdx.length === 0) break;
+            updateProgress("似た問題を作り直し中...", 0);
+            try {
+              const reSeeds = pickThemeSeeds(genre, dupIdx.length, usedThemes);
+              const prev = examPrevText + batch.map(q => "・" + q.question.replace(/\s+/g, ' ').slice(0, 60)).join("\n") + "\n";
+              const redo = await fetchMockAIBatch(genre, dupIdx.length, apiKey, false, prev, retryCallback, reSeeds);
+              dupIdx.forEach((di, k) => { if (redo[k]) batch[di] = redo[k]; });
+            } catch (e) { console.warn("作り直しに失敗したため、そのまま使います:", e.message); break; }
+          }
+
+          batch.forEach(q => {
+            examBigrams.push(bigramsOf(q.question + (q.options || []).join('')));
+            examPrevText += "・" + q.question.replace(/\s+/g, ' ').slice(0, 60) + "\n";
+          });
           genreQuestions.push(...batch);
-          prevText += batch.map(q => "・" + q.question).join("\n") + "\n";
           updateProgress("インターバル待機中...", batch.length);
           // APIの連続呼び出し制限を避けるための待機
           if (bi < batches - 1 || gi < plan.length - 1) await new Promise(r => setTimeout(r, 1500));
         }
-        genreQuestions.push(...getRandomQuestions(genre, past));
+        genreQuestions.push(...pickPastForAI(genre, past, usedThemes));
         result.push(...shuffleArray(genreQuestions));
       }
       updateProgress("全問題の準備完了！", 0);
@@ -1986,7 +2149,7 @@
     }
   }
 
-  async function fetchMockAIBatch(genre, count, apiKey, useLiteModel = false, previousQuestionsText = "", onRetry = null) {
+  async function fetchMockAIBatch(genre, count, apiKey, useLiteModel = false, previousQuestionsText = "", onRetry = null, seeds = []) {
     const modelName = useLiteModel ? 'gemini-3.5-flash-lite' : 'gemini-3.5-flash';
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     
@@ -1995,10 +2158,20 @@
         avoidPrompt = `\n\n【重要：重複の回避】\nすでに以下の問題が作成されています。これらと内容や問うている知識が被らないよう、全く異なるテーマや切り口で作成してください。\n${previousQuestionsText}`;
     }
 
+    // 過去問のテーマを1問ずつ指定する
+    let seedPrompt = "";
+    if (seeds.length > 0) {
+      seedPrompt = `\n\n【テーマの指定】\n次の${seeds.length}つのテーマについて、1テーマにつき1問ずつ、この順番で作成してください。出題例は参考で、同じ問題にしてはいけません。\n` +
+        seeds.map((sd, i) => `${i + 1}. ${sd.theme}（過去の出題例: ${sd.hint}）`).join('\n');
+    }
+    // 最近の腕試しでAIが扱ったテーマは避ける
+    const recent = Array.from(recentThemeSet('senmon')).slice(-40);
+    const recentPrompt = recent.length > 0 ? `\n\n【最近の模試で出したテーマ（これらは避ける）】\n${recent.join('、')}` : "";
+
     const prompt = `あなたは技術士（衛生工学部門）の試験委員です。「${genre}」分野について、本番試験と同等の難易度と形式で、五肢択一問題を【${count}問】作成してください。
-図表を使わずテキストのみで解答できる問題にし、JSONフォーマット（{"questions": [{"question": "...", "options": ["...","...","...","...","..."], "answer": 0, "explanation": "..."}]}）で出力してください。
+図表を使わずテキストのみで解答できる問題にし、JSONフォーマット（{"questions": [{"theme": "取り上げたテーマ名", "question": "...", "options": ["...","...","...","...","..."], "answer": 0, "explanation": "..."}]}）で出力してください。
 問題文や選択肢は、過去問と全く同じにならないよう工夫してください。
-※重要：問題文、選択肢、解説にはMarkdown記法（見出し、太字など）を使い、数式が含まれる場合は必ずLaTeX記法（インラインは $...$ 、ブロックは $$...$$）を使用してください。${getTrendPrompt(genre)}${avoidPrompt}`;
+※重要：問題文、選択肢、解説にはMarkdown記法（見出し、太字など）を使い、数式が含まれる場合は必ずLaTeX記法（インラインは $...$ 、ブロックは $$...$$）を使用してください。${getTrendPrompt(genre)}${seedPrompt}${recentPrompt}${avoidPrompt}`;
 
     const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { response_mime_type: "application/json" } };
     
@@ -2013,7 +2186,7 @@
                if (!useLiteModel) {
                    console.warn(`API Busy (${res.status}). Switching to Lite model for this batch.`);
                    if (onRetry) onRetry(retries, true);
-                   return fetchMockAIBatch(genre, count, apiKey, true, previousQuestionsText, onRetry); 
+                   return fetchMockAIBatch(genre, count, apiKey, true, previousQuestionsText, onRetry, seeds); 
                }
                throw new Error(`API Busy (${res.status}) - Lite model also failed.`);
            }
@@ -2031,6 +2204,7 @@
           qNum: "-",
           genre: genre,
           subgenre: "総合",
+          theme: String(q.theme || (seeds[idx] && seeds[idx].theme) || '').trim(),
           question: q.question,
           options: q.options,
           answer: q.answer,
@@ -2484,6 +2658,11 @@
     }
     const refText = refQuestions.map(q => `・${q}`).join('\n');
 
+    // この特訓で出題済みのAI問題と内容が被らないようにする
+    const alreadyAsked = filteredQuestions.filter(q => String(q.id).startsWith('AI-')).slice(-30)
+      .map(q => `・${String(q.question).replace(/\s+/g, ' ').slice(0, 60)}`).join('\n');
+    const askedPrompt = alreadyAsked ? `\n\n【すでに出題した問題（これらと内容や問う知識が被らないこと）】\n${alreadyAsked}` : "";
+
     const prompt = `あなたは${sj.examName}の試験委員です。
 以下の【過去の出題例】を分析し、難易度、文章の形式、専門用語のレベルを模倣した上で、同じ【五肢択一問題】の新しいオリジナル予想問題を、異なる切り口で「5問」生成してください。
 
@@ -2491,7 +2670,7 @@
 ${topicHint}
 
 【過去の出題例（参考）】
-${refText}${getTrendPrompt(genre)}
+${refText}${getTrendPrompt(genre)}${askedPrompt}
 
 【指示】
 ・過去問の単なるコピーではなく、関連知識を組み合わせたオリジナル問題にすること。
