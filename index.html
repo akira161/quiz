@@ -392,10 +392,11 @@
       <ul>
         <li><b>AI予想問題 網羅特訓:</b> 選択したジャンルの過去問を分析し、新しい5択問題を自動生成します。</li>
         <li><b>腕試しモード:</b> 本番と同じ形式・制限時間の模擬試験です。50%以上の正解で合格ライン。
-          <br>・専門: 35問から25問を選んで解答（120分）。標準の「AI予想問題 35問すべて新作」のほか、AI予想＋過去問、過去問ミックス・年度指定から選べます。
+          <br>・専門: 35問から25問を選んで解答（120分）。
           <br>・基礎: 5群×6問から各群3問ずつ計15問を選んで解答（60分）。
           <br>・適性: 15問すべてに解答（60分）。
-          <br>基礎・適性は過去問ミックス・年度指定（APIキー不要）で出題します。ミックスとAI出題では、同じテーマの問題が1回の試験に重ならないようにし、直近の腕試しで出た問題・テーマは出にくくなります（記録は腕試しの設定画面でリセットできます）。専門・基礎では、試験後に「選ばなかった問題」も解くと、選び方が最適だったか（何点取れていたか）を確認できます。</li>
+          <br>・基礎・適性もAI予想問題（全問新作／AI＋過去問）で本番と同じ構成の模試を作れます。過去問ミックス・年度指定はAPIキー不要です。
+          <br>ミックスとAI出題では、同じテーマの問題が1回の試験に重ならないようにし、直近の腕試しで出た問題・テーマは出にくくなります（記録は腕試しの設定画面でリセットできます）。専門・基礎では、試験後に「選ばなかった問題」も解くと、選び方が最適だったか（何点取れていたか）を確認できます。</li>
       </ul>
       <div class="warning-text" style="margin-top: 12px;">
         ※AI機能（詳細解説・予想問題・腕試しモードのAI出題）を利用するには、ご自身で「APIキー」を取得してアプリに設定する必要があります（無料）。詳しくは下記の手順をご覧ください。
@@ -697,7 +698,8 @@
 
     <div class="filter-group">
       <label for="mock-source">出題セット</label>
-      <select id="mock-source" class="filter-select"></select>
+      <select id="mock-source" class="filter-select" onchange="updateMockSourceNote()"></select>
+      <div id="mock-source-note" style="font-size: 0.8rem; color: var(--trend-text); margin-top: 6px; line-height: 1.5;"></div>
     </div>
     <div class="filter-group" style="margin-top: 12px;">
       <label for="mock-time">制限時間</label>
@@ -1918,14 +1920,15 @@
 
     const sel = document.getElementById('mock-source');
     sel.innerHTML = '';
-    if (currentSubject === 'senmon') {
-      sel.add(new Option('AI予想問題 35問すべて新作（APIキー必要）', 'ai35'));
-      sel.add(new Option('AI予想問題28問＋過去問7問（APIキー必要）', 'ai'));
-    }
+    const planAll = aiMockPlan('aiall'), planMix = aiMockPlan('ai');
+    const sum = (plan, k) => plan.reduce((t, x) => t + x[k], 0);
+    sel.add(new Option(`AI予想問題 ${rule.pool}問すべて新作（APIキー必要）`, 'aiall'));
+    sel.add(new Option(`AI予想問題${sum(planMix, 'ai')}問＋過去問${sum(planMix, 'past')}問（APIキー必要）`, 'ai'));
     sel.add(new Option(`過去問ミックス（問題番号ごとに各年度からランダムに抽出）`, 'mix'));
     masterYears.forEach(y => sel.add(new Option(`過去問 ${y}（本試験そのまま）`, `year:${y}`)));
-    sel.value = currentSubject === 'senmon' ? 'ai35' : 'mix';
+    sel.value = 'aiall';
     document.getElementById('mock-time').value = String(rule.minutes);
+    updateMockSourceNote();
 
     renderMockStrategy();
     updateMockSeenNote();
@@ -1951,7 +1954,7 @@
       const apiKey = localStorage.getItem('my_gemini_api_key');
       if (!apiKey) { alert("AI予想問題を使うには、スタート画面の設定エリアで Gemini APIキーを保存してください。"); return; }
       try {
-        questions = await buildAIMockSet(apiKey, AI_MOCK_PLANS[source]);
+        questions = await buildAIMockSet(apiKey, aiMockPlan(source));
       } catch (error) {
         console.error(error);
         alert("問題生成に失敗しました: " + error.message);
@@ -2052,6 +2055,43 @@
   };
   const AI_BATCH_SIZE = 4;
 
+  // AIで作る問題の構成。source: 'aiall'=すべてAI / 'ai'=AI＋過去問
+  // 専門は従来どおり。基礎・適性は、過去問1回あたりの分野別の出題数に合わせる（群・分野ごとにAIで作る）
+  function aiMockPlan(source) {
+    const mixed = source === 'ai';
+    if (currentSubject === 'senmon') return AI_MOCK_PLANS[mixed ? 'ai' : 'ai35'];
+    const rule = mockRuleOf(currentSubject);
+    const years = Math.max(1, masterYears.length);
+    const counts = masterGenres.map(g => Math.max(1, Math.round(allQuestions.filter(q => q.genre === g).length / years)));
+    // 合計が1回分の問題数になるよう、多い分野で調整する
+    let diff = rule.pool - counts.reduce((a, b) => a + b, 0);
+    while (diff !== 0) {
+      const i = counts.indexOf(diff > 0 ? Math.min(...counts) : Math.max(...counts));
+      counts[i] += diff > 0 ? 1 : -1;
+      diff += diff > 0 ? -1 : 1;
+    }
+    return masterGenres.map((g, i) => {
+      const past = mixed && counts[i] >= 2 ? Math.max(1, Math.round(counts[i] * 0.3)) : 0;
+      return { genre: g, ai: counts[i] - past, past };
+    });
+  }
+
+  // 科目ごとの作問上の注意（AIへの指示に加える）
+  const SUBJECT_AI_NOTES = {
+    senmon: '',
+    kiso: '基礎科目は、理工系の基礎知識（設計・計画、情報・論理、解析、材料・化学・バイオ、環境・エネルギー・技術）を問う科目です。計算を伴う問題は、必ず自分で検算し、正答と解説が一致するようにしてください。誤りの選択肢は、もっともらしい間違い（計算ミスや用語の取り違えなど）にしてください。',
+    tekisei: '適性科目は、技術士法第4章（信用失墜行為の禁止・秘密保持義務・公益確保の責務・資質向上の責務など）、技術者倫理、安全・リスク、法令・制度（知的財産、個人情報、製造物責任、公益通報など）の知識を問う科目です。過去問のように、「ア）〜エ）の記述の正誤（○×）の組合せを選ぶ形式」か「5つの記述から最も適切（不適切）なものを選ぶ形式」で作成してください。実在しない法令・条文・事例を作らず、正確な内容だけを使ってください。'
+  };
+
+  window.updateMockSourceNote = function() {
+    const v = document.getElementById('mock-source').value;
+    const note = document.getElementById('mock-source-note');
+    if (!v.startsWith('ai')) { note.textContent = ''; return; }
+    note.textContent = currentSubject === 'senmon'
+      ? '※AIが作る問題には、正答や内容の誤りが含まれる場合があります。'
+      : '※AIが作る問題には、正答や内容の誤りが含まれる場合があります（特に計算問題・法令）。迷ったら公式の過去問で確認してください。';
+  };
+
   // AI予想問題のセットを作る（分野ごとに4問ずつ生成し、重複を避けるため既出の問題文を渡す）
   async function buildAIMockSet(apiKey, plan) {
     switchScreen('screen-quiz');
@@ -2069,8 +2109,8 @@
     document.getElementById('ai-loading').style.display = 'block';
     document.getElementById('ai-progress-container').style.display = 'block';
     document.getElementById('ai-loading-msg').innerHTML = totalPast > 0
-      ? `本番形式の35問セットを構築中...<br>（AI生成${totalAiNeed}問 ＋ 過去問${totalPast}問）`
-      : `本番形式の35問セットを構築中...<br>（すべてAIによる新作${totalAiNeed}問・数分かかります）`;
+      ? `本番形式の${totalAiNeed + totalPast}問セットを構築中...<br>（AI生成${totalAiNeed}問 ＋ 過去問${totalPast}問）`
+      : `本番形式の${totalAiNeed}問セットを構築中...<br>（すべてAIによる新作・数分かかります）`;
 
     let aiGeneratedCount = 0;
 
@@ -2143,7 +2183,8 @@
         result.push(...shuffleArray(genreQuestions));
       }
       updateProgress("全問題の準備完了！", 0);
-      return result;
+      // 適性科目は分野ごとの区切りがないので、全体を混ぜる
+      return mockRuleOf(currentSubject).allRequired ? shuffleArray(result) : result;
     } finally {
       document.getElementById('ai-loading').style.display = 'none';
     }
@@ -2165,10 +2206,10 @@
         seeds.map((sd, i) => `${i + 1}. ${sd.theme}（過去の出題例: ${sd.hint}）`).join('\n');
     }
     // 最近の腕試しでAIが扱ったテーマは避ける
-    const recent = Array.from(recentThemeSet('senmon')).slice(-40);
+    const recent = Array.from(recentThemeSet(currentSubject)).slice(-40);
     const recentPrompt = recent.length > 0 ? `\n\n【最近の模試で出したテーマ（これらは避ける）】\n${recent.join('、')}` : "";
 
-    const prompt = `あなたは技術士（衛生工学部門）の試験委員です。「${genre}」分野について、本番試験と同等の難易度と形式で、五肢択一問題を【${count}問】作成してください。
+    const prompt = `あなたは${SUBJECTS[currentSubject].examName}の試験委員です。「${genre}」分野について、本番試験と同等の難易度と形式で、五肢択一問題を【${count}問】作成してください。${SUBJECT_AI_NOTES[currentSubject] ? '\n' + SUBJECT_AI_NOTES[currentSubject] : ''}
 図表を使わずテキストのみで解答できる問題にし、JSONフォーマット（{"questions": [{"theme": "取り上げたテーマ名", "question": "...", "options": ["...","...","...","...","..."], "answer": 0, "explanation": "..."}]}）で出力してください。
 問題文や選択肢は、過去問と全く同じにならないよう工夫してください。
 ※重要：問題文、選択肢、解説にはMarkdown記法（見出し、太字など）を使い、数式が含まれる場合は必ずLaTeX記法（インラインは $...$ 、ブロックは $$...$$）を使用してください。${getTrendPrompt(genre)}${seedPrompt}${recentPrompt}${avoidPrompt}`;
@@ -2198,7 +2239,7 @@
 
         return parsed.questions.slice(0, count).map((q, idx) => ({
           id: `MockAI-${genre}-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 9)}`,
-          subject: 'senmon',
+          subject: currentSubject,
           hasAnswer: true,
           year: "AI予想 (腕試し)",
           qNum: "-",
