@@ -288,6 +288,20 @@
     [data-theme="dark"] .api-link:hover { color: #93c5fd; }
     .warning-text { color: var(--danger-text); font-size: 0.85rem; font-weight: bold; background: var(--danger-bg); padding: 10px; border-radius: 6px; border: 1px solid rgba(239,68,68,0.3); }
 
+    /* --- ブックマーク --- */
+    .bookmark-btn { background: transparent; border: 1px solid var(--border); border-radius: 8px; min-width: 36px; height: 32px; font-size: 1.15rem; line-height: 1; cursor: pointer; color: var(--text-muted); padding: 0 8px; }
+    .bookmark-btn.on { color: #f59e0b; border-color: #f59e0b; background: rgba(245, 158, 11, 0.12); }
+    #prog-label { white-space: nowrap; }
+    .header > div:last-child { flex-shrink: 0; }
+    .mock-nav-btn { position: relative; }
+    .mock-nav-btn.bm::after { content: '★'; position: absolute; top: -7px; right: -4px; font-size: 0.7rem; color: #f59e0b; }
+    .bm-card { border: 1px solid var(--border); border-left: 4px solid #f59e0b; border-radius: 10px; padding: 12px; margin-bottom: 12px; background: var(--bg); }
+    .bm-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.8rem; color: var(--text-muted); font-weight: bold; }
+    .bm-q { line-height: 1.7; margin-bottom: 8px; }
+    .bm-opt { padding: 6px 8px; margin-bottom: 4px; border-radius: 6px; border: 1px solid var(--border); font-size: 0.9rem; }
+    .bm-opt.correct { background: var(--success-bg); border-color: var(--success-text); color: var(--success-text); font-weight: bold; }
+    .bm-card details summary { color: var(--primary); font-weight: bold; cursor: pointer; margin-bottom: 8px; }
+
     /* --- 科目切り替え --- */
     .subject-tabs { display: flex; gap: 6px; background: var(--bg); padding: 4px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 8px; }
     .subject-tabs.loading { opacity: 0.6; pointer-events: none; }
@@ -381,6 +395,7 @@
       <ul>
         <li><b>フィルター機能:</b> 「年度」「大分類」「小分類」「出題論点（細目）」「優先度」から解きたいジャンルを絞り込めます。</li>
         <li><b>問題の図・表:</b> 図や表が必要な問題には、問題文の下に原本の画像が自動で表示されます。それ以外の問題も「📄 原本画像を見る」で試験問題そのままの画像を確認できます。</li>
+        <li><b>ブックマーク:</b> 問題画面の ☆ を押すと登録できます（過去問・AI生成問題・腕試しの問題、腕試しの結果一覧からも）。スタート画面の「★ ブックマークを見る」で見返したり、ブックマークした問題だけを解いたりできます。</li>
         <li><b>弱点克服フィルター:</b> 「未回答の問題」や「過去に間違えた問題」だけを優先して出題し、効率的な復習が可能です。</li>
         <li><b>傾向重視:</b> 出題順序を「傾向重視」にすると、近年よく出題されるテーマが優先的に出題されます。</li>
       </ul>
@@ -469,6 +484,7 @@
           <option value="wrong">過去に間違えた問題を優先 (復習)</option>
           <option value="perfect">過去に正解した問題のみ</option>
           <option value="ai-saved">AI解説を保存した問題のみ</option>
+          <option value="bookmark">★ ブックマークした問題のみ</option>
         </select>
       </div>
 
@@ -549,6 +565,9 @@
     <button class="nav-btn secondary" onclick="openMockHistory()" style="margin-top: 12px;">
       📊 過去の腕試し結果を見る
     </button>
+    <button id="bookmark-open-btn" class="nav-btn secondary" onclick="openBookmarks()" style="margin-top: 12px;">
+      ★ ブックマークを見る
+    </button>
 
     <div class="settings-area">
       <h3>⚙️ AIモード用設定</h3>
@@ -571,7 +590,7 @@
         <button class="nav-btn danger" onclick="resetHistory()">学習記録をリセットする</button>
         <div style="font-size: 0.8rem; margin-top: 8px; color: var(--text-muted); line-height: 1.5;">
           ※総解答数、正解数、各問題の正誤履歴がすべて消去されます。<br>
-          （設定したAPIキーやテーマカラーはそのまま保持されます）
+          （設定したAPIキー・テーマカラー・ブックマークはそのまま保持されます）
         </div>
       </div>
     </div>
@@ -594,7 +613,10 @@
         <span id="cat-label" class="cat-label-badge">分野</span>
         <span id="trend-label" class="trend-badge">🔥頻出度</span>
       </div>
-      <span id="prog-label">問 1 / 1</span>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button id="bookmark-btn" class="bookmark-btn" onclick="toggleCurrentBookmark()" aria-label="ブックマーク" title="ブックマークする">☆</button>
+        <span id="prog-label">問 1 / 1</span>
+      </div>
     </div>
 
     <div id="q-source" class="q-source-badge"></div>
@@ -678,6 +700,30 @@
     </div>
     
     <button id="result-back-btn" class="nav-btn" onclick="goToStart()" style="margin-top: 24px;">設定・成績画面に戻る</button>
+  </div>
+
+  <div id="screen-bookmarks" class="screen">
+    <h2>★ ブックマーク</h2>
+    <div id="bm-subject-tabs" class="subject-tabs">
+      <button class="subject-tab" data-key="senmon" onclick="setBookmarkSubject('senmon')">専門</button>
+      <button class="subject-tab" data-key="kiso" onclick="setBookmarkSubject('kiso')">基礎</button>
+      <button class="subject-tab" data-key="tekisei" onclick="setBookmarkSubject('tekisei')">適性</button>
+    </div>
+    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5;">
+      過去問・AI生成問題・腕試しの問題を、問題画面の ☆ で登録できます。ブックマークは学習記録をリセットしても残ります。
+    </div>
+    <div class="filter-group" style="margin-bottom: 12px;">
+      <label for="bm-order">出題順（解くとき）</label>
+      <select id="bm-order" class="filter-select">
+        <option value="new">登録の新しい順</option>
+        <option value="random">ランダム</option>
+        <option value="original">年度・番号順</option>
+      </select>
+    </div>
+    <button id="bm-start-btn" class="nav-btn" onclick="startBookmarkQuiz()">この科目のブックマークを解く</button>
+    <div id="bm-list" style="margin-top: 20px;"></div>
+    <button class="nav-btn secondary" onclick="clearBookmarksOfSubject()" style="margin-top: 8px;">この科目のブックマークをすべて外す</button>
+    <button class="nav-btn secondary" onclick="goToStart()" style="margin-top: 12px;">設定画面に戻る</button>
   </div>
 
   <div id="note-modal" class="note-modal" onclick="if(event.target === this) closeNoteModal()">
@@ -784,6 +830,7 @@
     statsBy: {},
     history: {},
     mockExams: [],
+    bookmarks: {},     // ブックマーク: 問題ID → { subject, t, date, snap(AI生成問題だけ問題の内容を保存) }
     mockSeen: {},      // 科目ごとの、直近の腕試しで出た過去問のID（次回は出にくくする）
     mockThemes: {},    // 科目ごとの、直近の腕試しでAIが扱ったテーマ（次回は避ける）
     savedSession: null 
@@ -960,6 +1007,7 @@
         if (!userMemory.savedSession) userMemory.savedSession = null; 
         if (!userMemory.history) userMemory.history = {};
         if (!userMemory.mockSeen) userMemory.mockSeen = {};
+        if (!userMemory.bookmarks) userMemory.bookmarks = {};
         if (!userMemory.mockThemes) userMemory.mockThemes = {};
         // 旧形式の通算成績（専門科目のみ）を科目別に引き継ぐ
         if (!userMemory.statsBy) {
@@ -1136,12 +1184,14 @@
   }
 
   // 科目を読み込んで切り替える（読み込み済みならそのまま使う）
+  // 科目の問題を読み込む（読み込み済みならそのまま返す）。画面の科目は切り替えない
+  async function loadSubjectQuestions(key, buffer) {
+    if (!subjectCache[key]) subjectCache[key] = parseSubjectBuffer(buffer || await fetchSubjectBuffer(key), key);
+    return subjectCache[key];
+  }
+
   async function activateSubject(key, buffer) {
-    let qs = subjectCache[key];
-    if (!qs) {
-      qs = parseSubjectBuffer(buffer || await fetchSubjectBuffer(key), key);
-      subjectCache[key] = qs;
-    }
+    const qs = await loadSubjectQuestions(key, buffer);
     currentSubject = key;
     allQuestions = qs;
     userMemory.subject = key;
@@ -1387,13 +1437,16 @@
       if (currentMemory === 'wrong') return h && h.w > 0;
       if (currentMemory === 'perfect') return h && h.c > 0 && h.w === 0;
       if (currentMemory === 'ai-saved') return !!savedExplanations[q.id];
+      if (currentMemory === 'bookmark') return isBookmarked(q.id);
       return true;
     };
+    // 「ブックマークのみ」のときは、AI生成問題のブックマークも対象に含める
+    const pool = currentMemory === 'bookmark' ? allQuestions.concat(aiBookmarkQuestions(currentSubject)) : allQuestions;
 
     // 各選択肢の横に「他の条件を満たす問題数」を表示する
     const keys = Object.keys(sel);
     keys.forEach(k => {
-      const base = allQuestions.filter(q => keys.every(o => o === k || match[o](q)) && fKw(q) && fMem(q));
+      const base = pool.filter(q => keys.every(o => o === k || match[o](q)) && fKw(q) && fMem(q));
       const counts = {};
       base.forEach(q => valuesOf[k](q).forEach(v => { counts[v] = (counts[v] || 0) + 1; }));
       const select = sel[k];
@@ -1404,7 +1457,8 @@
       }
     });
 
-    currentTargetQuestions = allQuestions.filter(q => keys.every(o => match[o](q)) && fKw(q) && fMem(q));
+    currentTargetQuestions = pool.filter(q => keys.every(o => match[o](q)) && fKw(q) && fMem(q));
+    updateBookmarkOpenButton();
     
     const countEl = document.getElementById('target-count');
     const startBtn = document.getElementById('start-btn');
@@ -1496,6 +1550,188 @@
     const pool = allQuestions.filter(q => q.genre === genre);
     return shuffleArray([...pool]).slice(0, count);
   }
+
+  // --- ブックマーク ---
+  // 過去問はIDだけを保存し、AI生成問題は後から再現できないため問題の内容も保存する
+  function isAiQuestion(q) { return /^(AI-|MockAI-)/.test(String((q && q.id) || '')); }
+  function bookmarkSubjectOf(q) { return (q && SUBJECTS[q.subject] && q.subject) || (mockState && mockState.subject) || currentSubject; }
+  function isBookmarked(id) { return !!(userMemory.bookmarks && userMemory.bookmarks[id]); }
+
+  function snapshotOf(q) {
+    const keep = ['id', 'subject', 'year', 'qNum', 'genre', 'subgenre', 'topic', 'theme', 'question', 'options', 'answer', 'alsoCorrect', 'allCorrect', 'hasAnswer', 'explanation'];
+    const snap = {};
+    keep.forEach(k => { if (q[k] !== undefined) snap[k] = q[k]; });
+    snap.subject = bookmarkSubjectOf(q);
+    return snap;
+  }
+
+  // 保存した内容から、問題として使える形に戻す
+  function hydrateSnapshot(snap) {
+    return { ...snap, subTags: [snap.subgenre].filter(Boolean), issue: '', priority: '', trendKey: '', tagsText: '',
+             needsFigure: false, imageUrl: '', plain: false, yearNum: 0 };
+  }
+
+  function aiBookmarkQuestions(subject) {
+    return Object.values(userMemory.bookmarks || {})
+      .filter(e => e.snap && e.subject === subject)
+      .map(e => hydrateSnapshot(e.snap));
+  }
+
+  function bookmarkCount(subject) {
+    return Object.values(userMemory.bookmarks || {}).filter(e => e.subject === subject).length;
+  }
+
+  // ブックマークを付ける／外す。付けた状態になったら true
+  function toggleBookmark(q) {
+    userMemory.bookmarks = userMemory.bookmarks || {};
+    if (userMemory.bookmarks[q.id]) {
+      delete userMemory.bookmarks[q.id];
+      saveUserData();
+      return false;
+    }
+    userMemory.bookmarks[q.id] = {
+      subject: bookmarkSubjectOf(q),
+      t: Date.now(),
+      date: nowLabel(),
+      snap: isAiQuestion(q) ? snapshotOf(q) : null
+    };
+    saveUserData();
+    return true;
+  }
+
+  function refreshBookmarkButton() {
+    const btn = document.getElementById('bookmark-btn');
+    const q = filteredQuestions[curIdx];
+    if (!btn || !q) return;
+    const on = isBookmarked(q.id);
+    btn.classList.toggle('on', on);
+    btn.textContent = on ? '★' : '☆';
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.title = on ? 'ブックマークを外す' : 'ブックマークする';
+  }
+
+  window.toggleCurrentBookmark = function() {
+    const q = filteredQuestions[curIdx];
+    if (!q) return;
+    toggleBookmark(q);
+    refreshBookmarkButton();
+    if (isMockMode && mockState && (mockState.phase === 'exam' || mockState.phase === 'extra')) updateMockStatus();
+    updateBookmarkOpenButton();
+  };
+
+  function updateBookmarkOpenButton() {
+    const btn = document.getElementById('bookmark-open-btn');
+    if (btn) btn.textContent = `★ ブックマークを見る（${bookmarkCount(currentSubject)}）`;
+  }
+
+  // --- ブックマーク一覧の画面 ---
+  let bmSubject = 'senmon';
+  const bookmarkIndexCache = {};
+
+  async function resolveBookmarks(subject) {
+    const entries = Object.entries(userMemory.bookmarks || {}).filter(([, e]) => e.subject === subject).sort((a, b) => b[1].t - a[1].t);
+    const needDb = entries.some(([, e]) => !e.snap);
+    if (needDb) {
+      const qs = await loadSubjectQuestions(subject);
+      if (!bookmarkIndexCache[subject] || bookmarkIndexCache[subject].size !== qs.length) bookmarkIndexCache[subject] = new Map(qs.map(q => [q.id, q]));
+    }
+    return entries.map(([id, e]) => ({ id, entry: e, q: e.snap ? hydrateSnapshot(e.snap) : (bookmarkIndexCache[subject] || new Map()).get(id) || null }));
+  }
+
+  window.openBookmarks = function(key) {
+    bmSubject = SUBJECTS[key] ? key : currentSubject;
+    switchScreen('screen-bookmarks');
+    window.scrollTo(0, 0);
+    renderBookmarks();
+  };
+
+  window.setBookmarkSubject = function(key) {
+    bmSubject = key;
+    renderBookmarks();
+  };
+
+  async function renderBookmarks() {
+    document.querySelectorAll('#bm-subject-tabs .subject-tab').forEach(btn => {
+      const k = btn.dataset.key;
+      btn.textContent = `${SUBJECTS[k].short}（${bookmarkCount(k)}）`;
+      btn.classList.toggle('active', k === bmSubject);
+    });
+    const listEl = document.getElementById('bm-list');
+    const startBtn = document.getElementById('bm-start-btn');
+    const subject = bmSubject;
+    listEl.innerHTML = '<div class="empty-msg">読み込み中...</div>';
+    let items;
+    try {
+      items = await resolveBookmarks(subject);
+    } catch (e) {
+      listEl.innerHTML = `<div class="empty-msg">問題データを読み込めませんでした。<br>${escapeHtml(e.message)}</div>`;
+      return;
+    }
+    if (subject !== bmSubject) return;   // 読み込み中に別の科目へ切り替えられた
+
+    const usable = items.filter(it => it.q);
+    startBtn.disabled = usable.length === 0;
+    startBtn.textContent = usable.length ? `この科目のブックマークを解く（${usable.length}問）` : 'ブックマークがありません';
+    if (items.length === 0) {
+      listEl.innerHTML = '<div class="empty-msg" style="padding: 32px 12px;">ブックマークはまだありません。<br>問題画面の ☆ を押すと登録できます。</div>';
+      return;
+    }
+
+    listEl.innerHTML = '';
+    items.forEach(({ id, entry, q }) => {
+      const card = document.createElement('div');
+      card.className = 'bm-card';
+      const meta = q ? [q.year, q.qNum, q.genre].filter(Boolean).join('　') : '（問題データが見つかりません）';
+      let body = '';
+      if (q) {
+        const correct = correctIndexes(q);
+        const opts = q.options.map((o, i) => `<div class="bm-opt ${correct.includes(i) ? 'correct' : ''}">${optionHtml(q, i, o)}</div>`).join('');
+        const aiExp = savedExplanations[q.id] ? `<div class="hist-ai-box md-content" style="margin-top:10px;"><div class="ai-exp-title">✨ AI詳細解説</div>${DOMPurify.sanitize(marked.parse(explanationMarkdown(savedExplanations[q.id])))}</div>` : '';
+        const img = q.imageUrl ? `<div style="text-align:center; margin: 8px 0;"><a href="${q.imageUrl}" target="_blank" rel="noopener"><img loading="lazy" src="${q.imageUrl}" alt="問題の原本画像" class="question-image" style="margin-bottom:0;" onerror="this.parentElement.style.display='none';"></a></div>` : '';
+        body = `<div class="bm-q md-content">${richText(q, q.question)}</div>
+          <details>
+            <summary>答えと解説を見る</summary>
+            ${img}
+            ${opts}
+            <div style="margin: 8px 0; font-weight: bold; font-size: 0.9rem;">正解: ${escapeHtml(correctLabel(q))}</div>
+            <div class="md-content">${DOMPurify.sanitize(marked.parse(String(q.explanation || '')))}</div>
+            ${aiExp}
+          </details>`;
+      }
+      card.innerHTML = `<div class="bm-head"><span>${escapeHtml(meta)}<br><span style="font-weight:normal;">登録: ${escapeHtml(entry.date || '')}</span></span><button class="bookmark-btn on" title="ブックマークを外す">★</button></div>${body}`;
+      card.querySelector('.bookmark-btn').onclick = () => { delete userMemory.bookmarks[id]; saveUserData(); updateBookmarkOpenButton(); renderBookmarks(); };
+      listEl.appendChild(card);
+    });
+    if (window.MathJax && window.MathJax.typesetPromise) MathJax.typesetPromise([listEl]).catch(err => console.error(err));
+  }
+
+  window.clearBookmarksOfSubject = function() {
+    const n = bookmarkCount(bmSubject);
+    if (n === 0) { alert("この科目のブックマークはありません。"); return; }
+    if (!confirm(`${SUBJECTS[bmSubject].label}のブックマーク ${n} 件をすべて外しますか？\n（この操作は取り消せません）`)) return;
+    Object.keys(userMemory.bookmarks).forEach(id => { if (userMemory.bookmarks[id].subject === bmSubject) delete userMemory.bookmarks[id]; });
+    saveUserData();
+    updateBookmarkOpenButton();
+    renderBookmarks();
+  };
+
+  // ブックマークした問題だけを解く（AI生成問題も含む）
+  window.startBookmarkQuiz = async function() {
+    let items;
+    try { items = (await resolveBookmarks(bmSubject)).filter(it => it.q); }
+    catch (e) { alert("問題データを読み込めませんでした: " + e.message); return; }
+    if (items.length === 0) return;
+    if (bmSubject !== currentSubject) {
+      try { await activateSubject(bmSubject); updateMemoryUI(); }
+      catch (e) { alert("科目を切り替えられませんでした: " + e.message); return; }
+    }
+    // activateSubject 後の問題データ（同じ配列）から取り直す
+    const list = items.map(it => it.q);
+    const order = document.getElementById('bm-order').value;
+    if (order === 'random') shuffleArray(list);
+    else if (order === 'original') list.sort((a, b) => (a.yearNum || 0) - (b.yearNum || 0) || slotOrder(a) - slotOrder(b));
+    startQuizWith(list);
+  };
 
   // --- AI解説の保存（問題IDごとに端末へ保存し、次回からは通信なしで表示） ---
   const AI_EXP_KEY = 'ai_explanations';
@@ -2101,11 +2337,13 @@
   // 生成中は「問題の表示」と下のボタン（中断／次へ）を隠し、「生成をやめる」だけを出す
   function showAiLoading() {
     document.getElementById('ai-loading').style.display = 'block';
+    document.getElementById('bookmark-btn').style.display = 'none';
     const controls = document.querySelector('#screen-quiz .controls');
     if (controls) controls.style.display = 'none';
   }
   function hideAiLoading() {
     document.getElementById('ai-loading').style.display = 'none';
+    document.getElementById('bookmark-btn').style.display = '';
     const controls = document.querySelector('#screen-quiz .controls');
     if (controls) controls.style.display = '';
   }
@@ -2495,6 +2733,7 @@ ${AI_JSON_FORMAT}
       const btn = document.getElementById(`mock-nav-btn-${idx}`);
       if (!btn) return;
       btn.classList.toggle('answered', answers.hasOwnProperty(q.id));
+      btn.classList.toggle('bm', isBookmarked(q.id));
       btn.classList.toggle('current', idx === curIdx);
       btn.classList.toggle('locked', !isMockNavigable(q));
     });
@@ -2548,6 +2787,7 @@ ${AI_JSON_FORMAT}
     const answers = mockAnswerMap();
 
     document.getElementById('prog-label').textContent = `問 ${curIdx + 1} / ${filteredQuestions.length}`;
+    refreshBookmarkButton();
     document.getElementById('cat-label').textContent = q.genre;
     document.getElementById('trend-label').style.display = 'none';
     document.getElementById('q-source').style.display = 'none';
@@ -2778,24 +3018,30 @@ ${AI_JSON_FORMAT}
 
   window.startQuiz = function() {
     if (currentTargetQuestions.length === 0) return;
-    window.isViewingPastMock = false;
-    isMockMode = false;
-    isAiMode = false;
-    mockState = null;
     let questionsPool = [...currentTargetQuestions];
     const orderType = document.getElementById('order-filter').value;
     const selectedCountStr = document.getElementById('count-filter').value;
     const selectedCount = selectedCountStr === 'all' ? questionsPool.length : parseInt(selectedCountStr, 10);
     
+    let list;
     if (orderType === 'trend') {
-      filteredQuestions = getWeightedRandomQuestions(questionsPool, selectedCount);
+      list = getWeightedRandomQuestions(questionsPool, selectedCount);
     } else if (orderType === 'random') {
       shuffleArray(questionsPool);
-      filteredQuestions = questionsPool.slice(0, selectedCount);
+      list = questionsPool.slice(0, selectedCount);
     } else {
-      filteredQuestions = questionsPool.slice(0, selectedCount);
+      list = questionsPool.slice(0, selectedCount);
     }
+    startQuizWith(list);
+  };
 
+  // 問題の一覧を渡して、過去問演習を始める（絞り込み・ブックマークの両方から使う）
+  function startQuizWith(list) {
+    window.isViewingPastMock = false;
+    isMockMode = false;
+    isAiMode = false;
+    mockState = null;
+    filteredQuestions = list;
     sessionAnswers = {};
     curIdx = 0;
     
@@ -2810,7 +3056,7 @@ ${AI_JSON_FORMAT}
     renderQuestion();
 
     clearSavedSession();
-  };
+  }
 
   window.startAIQuiz = async function() {
     const savedKey = localStorage.getItem('my_gemini_api_key');
@@ -2992,6 +3238,7 @@ ${AI_JSON_FORMAT}`;
     const q = filteredQuestions[curIdx];
 
     document.getElementById('prog-label').textContent = `問 ${curIdx + 1} / ${filteredQuestions.length}`;
+    refreshBookmarkButton();
     document.getElementById('cat-label').textContent = [q.genre, q.subgenre, (q.topic && q.topic !== q.subgenre) ? q.topic : '']
       .filter(Boolean).join(' > ');
     
@@ -2999,7 +3246,7 @@ ${AI_JSON_FORMAT}`;
     document.getElementById('q-text').innerHTML = richText(q, q.question);
     
     const sourceEl = document.getElementById('q-source');
-    if (q.year === "AI予想 (腕試し)" || isAiMode) {
+    if (isAiQuestion(q) || q.year === "AI予想 (腕試し)" || isAiMode) {
       sourceEl.innerHTML = '✨ AIオリジナル予想問題';
       sourceEl.style.color = '#a855f7';
       sourceEl.style.borderColor = 'rgba(168, 85, 247, 0.3)';
@@ -3079,7 +3326,7 @@ ${AI_JSON_FORMAT}`;
       
       if (savedExplanations[q.id]) {
         showAIExplanation(q);
-      } else if (!isAiMode) {
+      } else if (!isAiMode && !isAiQuestion(q)) {
         document.getElementById('ai-explain-btn').style.display = 'block';
       }
       updateNoteButton(document.getElementById('note-link-btn'), q);
@@ -3111,7 +3358,7 @@ ${AI_JSON_FORMAT}`;
     
     sessionAnswers[q.id] = selectedIdx; 
     
-    if (!isAiMode && hasAnswerOf(q)) { 
+    if (!isAiMode && !isAiQuestion(q) && hasAnswerOf(q)) { 
       if (!userMemory.history[q.id]) {
         userMemory.history[q.id] = { c: 0, w: 0 };
       }
@@ -3474,7 +3721,7 @@ ${answerText}`;
         DOMPurify.sanitize(marked.parse(explanationMarkdown(saved)));
       box.appendChild(aiBox);
       if (window.MathJax && window.MathJax.typesetPromise) MathJax.typesetPromise([aiBox]).catch(err => console.error(err));
-    } else if (!String(q.year).startsWith('AI') && localStorage.getItem('my_gemini_api_key')) {
+    } else if (!isAiQuestion(q) && localStorage.getItem('my_gemini_api_key')) {
       const btn = document.createElement('button');
       btn.className = 'hist-ai-btn';
       btn.textContent = '✨ AI詳細解説を生成して保存';
@@ -3572,6 +3819,18 @@ ${answerText}`;
         </div>
       `;
       historyList.appendChild(item);
+
+      // ブックマークの★（腕試しの結果・過去の腕試しの詳細からも登録できる）
+      const markEl = item.querySelector('.hi-mark');
+      const bmBtn = document.createElement('button');
+      bmBtn.className = 'bookmark-btn';
+      const syncBm = () => { const on = isBookmarked(q.id); bmBtn.classList.toggle('on', on); bmBtn.textContent = on ? '★' : '☆'; bmBtn.title = on ? 'ブックマークを外す' : 'ブックマークする'; };
+      bmBtn.onclick = () => { toggleBookmark(q); syncBm(); updateBookmarkOpenButton(); };
+      syncBm();
+      const markWrap = document.createElement('span');
+      markWrap.style.cssText = 'display:flex; gap:6px; align-items:center;';
+      markEl.replaceWith(markWrap);
+      markWrap.append(markEl, bmBtn);
       
       const expContainer = item.querySelector('.hist-exp-content');
       expContainer.innerHTML = DOMPurify.sanitize(marked.parse(q.explanation));
