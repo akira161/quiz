@@ -301,6 +301,7 @@
     .mode-card.mock b, .mode-card.mock span { color: #fff; }
     .mode-card.ai { border-color: rgba(168,85,247,0.5); }
     .mode-card:active { transform: scale(0.98); }
+    .ai-off .ai-only, .ai-off #start-ai-btn, .ai-off .ai-regen-btn, .ai-off #ai-explain-btn { display: none !important; }
     #toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px); background: rgba(15,23,42,0.92); color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 0.9rem; opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s; z-index: 1000; max-width: 90vw; text-align: center; }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     .font-size-row { display: flex; gap: 6px; }
@@ -627,6 +628,13 @@
       <summary>⚙️ 設定・データ管理</summary>
       <div class="fold-body">
         <div class="filter-group">
+          <label>AI機能（問題生成・AI解説）</label>
+          <div class="font-size-row" id="ai-chips">
+            <button class="chip" data-ai="on" onclick="setAiEnabled(true)">使う</button>
+            <button class="chip" data-ai="off" onclick="setAiEnabled(false)">使わない（すべて非表示）</button>
+          </div>
+        </div>
+        <div class="filter-group ai-only" style="margin-top: 16px;">
           <label for="api-key-input">Gemini APIキー（AI機能用）</label>
           <div style="display: flex; gap: 8px;">
             <input type="password" id="api-key-input" class="filter-input" placeholder="APIキーを入力..." style="flex: 1;">
@@ -1704,8 +1712,21 @@
     document.querySelectorAll('#font-chips .chip').forEach(c => c.classList.toggle('on', c.dataset.font === k));
     savePref('font', k);
   };
+  function isAiOff() { return !!(userMemory.prefs && userMemory.prefs.aiOff); }
+  function applyAiEnabled() {
+    const off = isAiOff();
+    document.body.classList.toggle('ai-off', off);
+    document.querySelectorAll('#ai-chips .chip').forEach(c => c.classList.toggle('on', (c.dataset.ai === 'off') === off));
+  }
+  window.setAiEnabled = function(on) {
+    if (!on && currentAiJob && !currentAiJob.aborted) { currentAiJob.cancel(); hideAiLoading(); }
+    savePref('aiOff', !on);
+    applyAiEnabled();
+    showToast(on ? 'AI機能をオンにしました' : 'AI機能をオフにしました');
+  };
   function applyPrefs() {
     const pf = userMemory.prefs || {};
+    applyAiEnabled();
     if (pf.order && document.querySelector(`#order-filter option[value="${pf.order}"]`)) document.getElementById('order-filter').value = pf.order;
     if (pf.count && document.querySelector(`#count-filter option[value="${pf.count}"]`)) document.getElementById('count-filter').value = pf.count;
     document.documentElement.style.fontSize = FONT_PX[pf.font] || FONT_PX.m;
@@ -2362,11 +2383,13 @@
     sel.innerHTML = '';
     const planAll = aiMockPlan('aiall'), planMix = aiMockPlan('ai');
     const sum = (plan, k) => plan.reduce((t, x) => t + x[k], 0);
-    sel.add(new Option(`AI予想問題 ${rule.pool}問すべて新作（APIキー必要）`, 'aiall'));
-    sel.add(new Option(`AI予想問題${sum(planMix, 'ai')}問＋過去問${sum(planMix, 'past')}問（APIキー必要）`, 'ai'));
+    if (!isAiOff()) {
+      sel.add(new Option(`AI予想問題 ${rule.pool}問すべて新作（APIキー必要）`, 'aiall'));
+      sel.add(new Option(`AI予想問題${sum(planMix, 'ai')}問＋過去問${sum(planMix, 'past')}問（APIキー必要）`, 'ai'));
+    }
     sel.add(new Option(`過去問ミックス（問題番号ごとに各年度からランダムに抽出）`, 'mix'));
     masterYears.forEach(y => sel.add(new Option(`過去問 ${y}（本試験そのまま）`, `year:${y}`)));
-    sel.value = 'aiall';
+    sel.value = isAiOff() ? 'mix' : 'aiall';
     document.getElementById('mock-time').value = String(rule.minutes);
     updateMockSourceNote();
 
@@ -3258,6 +3281,7 @@ ${AI_JSON_FORMAT}
   }
 
   window.startAIQuiz = async function() {
+    if (isAiOff()) { showToast('AI機能がオフです（設定で変更できます）'); return; }
     const savedKey = localStorage.getItem('my_gemini_api_key');
     if (!savedKey) {
       alert("AIモードを使用するには、スタート画面の下部にある設定エリアに「Gemini APIキー」を入力して保存してください。");
@@ -3528,7 +3552,7 @@ ${AI_JSON_FORMAT}`;
       
       if (savedExplanations[q.id]) {
         showAIExplanation(q);
-      } else if (!isAiMode && !isAiQuestion(q)) {
+      } else if (!isAiMode && !isAiQuestion(q) && !isAiOff()) {
         document.getElementById('ai-explain-btn').style.display = 'block';
       }
       updateNoteButton(document.getElementById('note-link-btn'), q);
@@ -3660,6 +3684,7 @@ ${answerText}`;
   };
 
   window.askAIExplain = async function() {
+    if (isAiOff()) return;
     if (!localStorage.getItem('my_gemini_api_key')) {
       alert("AI解説機能を使用するには、スタート画面の設定エリアに「Gemini APIキー」を入力して保存してください。");
       return;
