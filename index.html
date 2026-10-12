@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>技術士一次試験 過去問演習</title>
@@ -262,6 +262,48 @@
     #start-ai-btn:hover:not(:disabled) { background: linear-gradient(135deg, #9333ea, #c026d3); }
     #ai-loading { display: none; text-align: center; padding: 40px 20px; }
 
+
+    /* ===== 使いやすさ改善 ===== */
+    button, a, label, select, summary { touch-action: manipulation; }
+    .filter-select, .filter-input { font-size: 16px; }
+    body[data-screen="screen-quiz"] .top-bar { display: none; }
+    .controls { position: sticky; bottom: 0; z-index: 5; margin-top: 24px; background: var(--card);
+      padding: 12px 0 calc(12px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 8px -8px rgba(0,0,0,0.15); }
+    .controls .nav-btn#prev-btn { flex: 0.35; }
+    .prog-wrap { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin: -4px 0 12px; }
+    #prog-fill { height: 100%; width: 0; background: var(--primary); transition: width 0.3s; }
+    #prog-label { white-space: nowrap; }
+    .resume-banner { background: rgba(99,102,241,0.1); border: 2px dashed var(--primary); padding: 12px 14px; border-radius: 10px; margin-bottom: 16px; }
+    .resume-banner .rb-title { font-weight: bold; color: var(--primary); margin-bottom: 4px; }
+    .stat-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .stat-row > div { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 4px; text-align: center; }
+    .stat-row span { display: block; font-size: 0.7rem; color: var(--text-muted); }
+    .stat-row b { font-size: 1.2rem; color: var(--primary); }
+    details.fold { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 14px; background: var(--card); }
+    details.fold > summary { cursor: pointer; padding: 12px 14px; font-weight: bold; font-size: 0.92rem; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    details.fold > summary::-webkit-details-marker { display: none; }
+    details.fold > summary::after { content: '▾'; color: var(--text-muted); transition: transform 0.2s; }
+    details.fold[open] > summary::after { transform: rotate(180deg); }
+    details.fold .fold-body { padding: 0 14px 14px; }
+    .fold-sum { font-weight: normal; font-size: 0.78rem; color: var(--text-muted); margin-left: auto; text-align: right; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .today-card { border: 2px solid rgba(99,102,241,0.35); border-radius: 12px; padding: 14px; margin-bottom: 14px; background: var(--info-bg); }
+    .today-card h3 { margin: 0 0 10px; font-size: 1rem; }
+    .chip-label { font-size: 0.78rem; font-weight: bold; color: var(--text-muted); margin: 8px 0 6px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 999px; padding: 8px 12px; font-size: 0.85rem; cursor: pointer; font-weight: 600; min-height: 38px; }
+    .chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .chip:disabled { opacity: 0.45; cursor: not-allowed; }
+    .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    .mode-card { border: 1px solid var(--border); border-radius: 12px; padding: 12px 10px; background: var(--card); color: var(--text); text-align: left; cursor: pointer; font: inherit; display: flex; flex-direction: column; gap: 4px; min-height: 84px; }
+    .mode-card b { font-size: 0.95rem; }
+    .mode-card span { font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; }
+    .mode-card.mock { background: linear-gradient(135deg, #f59e0b, #ea580c); border: none; }
+    .mode-card.mock b, .mode-card.mock span { color: #fff; }
+    .mode-card.ai { border-color: rgba(168,85,247,0.5); }
+    .mode-card:active { transform: scale(0.98); }
+    #toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px); background: rgba(15,23,42,0.92); color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 0.9rem; opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s; z-index: 1000; max-width: 90vw; text-align: center; }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .font-size-row { display: flex; gap: 6px; }
     .settings-area { margin-top: 32px; padding-top: 24px; border-top: 2px dashed var(--border); }
     .settings-area h3 { font-size: 1rem; color: var(--text-muted); margin-top: 0; margin-bottom: 12px; }
     
@@ -363,6 +405,7 @@
 <body>
 
 <div class="container" id="app-container">
+  <div id="toast" role="status" aria-live="polite"></div>
   <div id="offline-badge" style="display: none; background: var(--trend-bg); color: var(--trend-text); font-size: 0.8rem; font-weight: bold; text-align: center; padding: 6px; border-radius: 8px; margin-bottom: 12px;">📴 オフラインで動作中（過去問演習・模試・まとめノートは使えます。AI機能は通信が必要です）</div>
   
   <div class="top-bar">
@@ -396,6 +439,7 @@
         <li><b>フィルター機能:</b> 「年度」「大分類」「小分類」「出題論点（細目）」「優先度」から解きたいジャンルを絞り込めます。</li>
         <li><b>問題の図・表:</b> 図や表が必要な問題には、問題文の下に原本の画像が自動で表示されます。それ以外の問題も「📄 原本画像を見る」で試験問題そのままの画像を確認できます。</li>
         <li><b>ブックマーク:</b> 問題画面の ☆ を押すと登録できます（過去問・AI生成問題・腕試しの問題、腕試しの結果一覧からも）。スタート画面の「★ ブックマークを見る」で見返したり、ブックマークした問題だけを解いたりできます。</li>
+        <li><b>操作のコツ:</b> スタート画面の「出題する問題」「出題数」はボタン1つで切り替えられます。問題画面では、下の「◀ 前」で前の問題に戻れ、キーボードでは 1〜5=選択 / Enter・→=次へ / ←=前へ / B=ブックマーク が使えます。スマホの戻るボタンでも、進捗を保存してスタート画面に戻れます（腕試し中は確認が出ます）。結果画面の「間違えた問題をもう一度解く」で復習できます。文字の大きさは「⚙️ 設定」で変えられます。</li>
         <li><b>弱点克服フィルター:</b> 「未回答の問題」や「過去に間違えた問題」だけを優先して出題し、効率的な復習が可能です。</li>
         <li><b>傾向重視:</b> 出題順序を「傾向重視」にすると、近年よく出題されるテーマが優先的に出題されます。</li>
       </ul>
@@ -456,144 +500,164 @@
     </div>
     <div id="subject-exam-name" class="subject-exam-name"></div>
     
+    <div id="resume-area" class="resume-banner" style="display: none;">
+      <div class="rb-title">⚠️ 中断中のデータがあります</div>
+      <div id="resume-info" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 10px;"></div>
+      <div style="display: flex; gap: 8px;">
+        <button class="nav-btn" onclick="resumeSession()" style="flex: 1; padding: 12px;">▶️ 続きから再開する</button>
+        <button class="icon-btn" style="border: none; color: var(--danger-text); background: var(--bg);" onclick="discardSession()" title="破棄する" aria-label="中断データを破棄">🗑️</button>
+      </div>
+    </div>
+
     <div class="memory-summary">
       <div class="ms-title">
         <div style="display: flex; align-items: center; gap: 6px;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
-          あなたの端末内の学習記録（<span id="memory-subject">専門</span>）
+          あなたの学習記録（<span id="memory-subject">専門</span>・この端末内）
         </div>
       </div>
-      <div class="ms-stats">
+      <div class="stat-row">
         <div><span>総解答数</span><b id="ms-total">0</b></div>
         <div><span>正解数</span><b id="ms-correct">0</b></div>
         <div><span>通算正答率</span><b id="ms-rate">0%</b></div>
       </div>
-      <div class="charts-wrapper">
-        <div class="chart-container">
-          <canvas id="radarChart"></canvas>
+      <details class="fold" id="radar-details" style="margin: 8px 0 0;">
+        <summary>📈 分野別の正答率グラフ</summary>
+        <div class="fold-body">
+          <div class="charts-wrapper">
+            <div class="chart-container">
+              <canvas id="radarChart"></canvas>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
-    
-    <div class="filter-grid">
-      <div class="filter-group" style="grid-column: 1 / -1;">
-        <label for="memory-filter">📝 学習状況フィルター（弱点克服）</label>
-        <select id="memory-filter" class="filter-select" onchange="updateFilterUI()">
-          <option value="all">すべての問題から出題</option>
-          <option value="unanswered">未回答の問題を優先</option>
-          <option value="wrong">過去に間違えた問題を優先 (復習)</option>
-          <option value="perfect">過去に正解した問題のみ</option>
-          <option value="ai-saved">AI解説を保存した問題のみ</option>
-          <option value="bookmark">★ ブックマークした問題のみ</option>
-        </select>
-      </div>
-
-      <div class="filter-group" style="grid-column: 1 / -1;">
-        <label for="keyword-filter">キーワード検索</label>
-        <input type="text" id="keyword-filter" class="filter-input" placeholder="問題文や解説に含まれる語句" oninput="updateFilterUI()">
-      </div>
-
-      <div class="filter-group">
-        <label for="year-filter">年度</label>
-        <select id="year-filter" class="filter-select" onchange="updateFilterUI()"></select>
-      </div>
-      
-      <div class="filter-group">
-        <label for="genre-filter" id="lbl-genre">大分類</label>
-        <select id="genre-filter" class="filter-select" onchange="updateFilterUI()"></select>
-      </div>
-
-      <div class="filter-group" style="grid-column: 1 / -1;">
-        <label for="subgenre-filter" id="lbl-subgenre">小分類（サブジャンル）</label>
-        <select id="subgenre-filter" class="filter-select" onchange="updateFilterUI()"></select>
-      </div>
-
-      <div class="filter-group" style="grid-column: 1 / -1;">
-        <label for="topic-filter" id="lbl-topic">出題論点（細目）</label>
-        <select id="topic-filter" class="filter-select" onchange="updateFilterUI()"></select>
-      </div>
-
-      <div class="filter-group" style="grid-column: 1 / -1;">
-        <label for="priority-filter">優先度（出題頻度）</label>
-        <select id="priority-filter" class="filter-select" onchange="updateFilterUI()">
-          <option value="all">すべて</option>
-          <option value="高">高（よく出る）</option>
-          <option value="中">中</option>
-          <option value="低">低</option>
-        </select>
-      </div>
-
-      <div style="display: flex; gap: 12px; grid-column: 1 / -1;">
-        <div class="filter-group" style="flex: 1;">
-          <label for="order-filter">出題順序・モード</label>
-          <select id="order-filter" class="filter-select">
-            <option value="trend" selected>🔥 傾向重視（最近の頻出優先）</option>
-            <option value="random">ランダム順</option>
-            <option value="original">出題順（年度・番号）</option>
-          </select>
-        </div>
-        <div class="filter-group" style="flex: 1;">
-          <label for="count-filter">出題数</label>
-          <select id="count-filter" class="filter-select">
-            <option value="all">すべて出題</option>
-            <option value="5">5問</option>
-            <option value="10" selected>10問</option>
-            <option value="20">20問</option>
-            <option value="30">30問</option>
-            <option value="50">50問</option>
-          </select>
-        </div>
-      </div>
+      </details>
     </div>
 
-    <div id="target-count" class="target-count-box">出題対象: 計算中...</div>
-    
-    <div id="resume-area" style="display: none; background: rgba(99, 102, 241, 0.1); border: 2px dashed var(--primary); padding: 16px; border-radius: 8px; margin-bottom: 24px; text-align: center;">
-      <div style="font-weight: bold; color: var(--primary); margin-bottom: 8px;">⚠️ 中断中のデータがあります</div>
-      <div id="resume-info" style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 12px;"></div>
-      <div style="display: flex; gap: 8px;">
-        <button class="nav-btn" onclick="resumeSession()" style="flex: 1;">▶️ 続きから再開する</button>
-        <button class="icon-btn" style="border: none; color: var(--danger-text); background: var(--bg);" onclick="discardSession()" title="破棄する">🗑️</button>
+    <div class="today-card">
+      <h3>📝 過去問演習</h3>
+      <div class="chip-label">出題する問題</div>
+      <div class="chips" id="memory-chips">
+        <button class="chip" data-mem="all" onclick="setMemoryChip('all')">すべて</button>
+        <button class="chip" data-mem="unanswered" onclick="setMemoryChip('unanswered')">未回答</button>
+        <button class="chip" data-mem="wrong" onclick="setMemoryChip('wrong')">間違えた問題</button>
+        <button class="chip" data-mem="bookmark" onclick="setMemoryChip('bookmark')">★ ブックマーク</button>
       </div>
+      <div class="chip-label">出題数</div>
+      <div class="chips" id="count-chips">
+        <button class="chip" data-count="10" onclick="setCountChip('10')">10問</button>
+        <button class="chip" data-count="20" onclick="setCountChip('20')">20問</button>
+        <button class="chip" data-count="30" onclick="setCountChip('30')">30問</button>
+        <button class="chip" data-count="50" onclick="setCountChip('50')">50問</button>
+        <button class="chip" data-count="all" onclick="setCountChip('all')">全問</button>
+      </div>
+      <div class="chip-label"><label for="order-filter" style="margin:0;">出題順</label></div>
+      <select id="order-filter" class="filter-select" onchange="onPrefChange()">
+        <option value="trend" selected>🔥 傾向重視（最近の頻出優先）</option>
+        <option value="random">ランダム順</option>
+        <option value="original">出題順（年度・番号）</option>
+      </select>
+      <select id="count-filter" style="display:none" onchange="onPrefChange()">
+        <option value="all">すべて出題</option>
+        <option value="5">5問</option>
+        <option value="10" selected>10問</option>
+        <option value="20">20問</option>
+        <option value="30">30問</option>
+        <option value="50">50問</option>
+      </select>
+      <div id="target-count" class="target-count-box" style="margin: 12px 0;">出題対象: 計算中...</div>
+      <button id="start-btn" class="nav-btn" onclick="startQuiz()">▶ 過去問演習を始める</button>
     </div>
-    
-    <button id="start-btn" class="nav-btn" onclick="startQuiz()">過去問演習を開始する</button>
-    <button id="start-ai-btn" class="nav-btn" onclick="startAIQuiz()">✨ AI予想問題 網羅特訓モード (5問ずつ生成)</button>
-    <button id="start-mock-btn" class="nav-btn" onclick="openMockSetup()" style="background: linear-gradient(135deg, #f59e0b, #ea580c); margin-top: 16px;">
-      🏆 腕試しモード (本番形式・時間制限)
-    </button>
-    <button class="nav-btn secondary" onclick="openMockHistory()" style="margin-top: 12px;">
-      📊 過去の腕試し結果を見る
-    </button>
-    <button id="bookmark-open-btn" class="nav-btn secondary" onclick="openBookmarks()" style="margin-top: 12px;">
-      ★ ブックマークを見る
-    </button>
 
-    <div class="settings-area">
-      <h3>⚙️ AIモード用設定</h3>
-      <div class="filter-group">
-        <label for="api-key-input">Gemini APIキー</label>
-        <div style="display: flex; gap: 8px;">
-          <input type="password" id="api-key-input" class="filter-input" placeholder="APIキーを入力..." style="flex: 1;">
-          <button class="nav-btn secondary" onclick="saveApiKey()" style="padding: 12px; width: auto; font-size: 0.9rem;">保存</button>
-        </div>
-        <div id="api-key-status" style="font-size: 0.8rem; margin-top: 6px; color: var(--text-muted);">
-          ※APIキーはあなたの端末内（ブラウザ）にのみ安全に保存されます。
+    <details class="fold" id="filter-details">
+      <summary>🔎 絞り込み<span class="fold-sum" id="filter-summary">条件なし</span></summary>
+      <div class="fold-body">
+        <div class="filter-grid" style="margin-bottom: 0;">
+          <div class="filter-group" style="grid-column: 1 / -1;">
+            <label for="keyword-filter">キーワード検索</label>
+            <input type="text" id="keyword-filter" class="filter-input" placeholder="問題文や解説に含まれる語句" oninput="updateFilterUI()">
+          </div>
+          <div class="filter-group">
+            <label for="year-filter">年度</label>
+            <select id="year-filter" class="filter-select" onchange="updateFilterUI()"></select>
+          </div>
+          <div class="filter-group">
+            <label for="genre-filter" id="lbl-genre">大分類</label>
+            <select id="genre-filter" class="filter-select" onchange="updateFilterUI()"></select>
+          </div>
+          <div class="filter-group" style="grid-column: 1 / -1;">
+            <label for="subgenre-filter" id="lbl-subgenre">小分類（サブジャンル）</label>
+            <select id="subgenre-filter" class="filter-select" onchange="updateFilterUI()"></select>
+          </div>
+          <div class="filter-group" style="grid-column: 1 / -1;">
+            <label for="topic-filter" id="lbl-topic">出題論点（細目）</label>
+            <select id="topic-filter" class="filter-select" onchange="updateFilterUI()"></select>
+          </div>
+          <div class="filter-group" style="grid-column: 1 / -1;">
+            <label for="priority-filter">優先度（出題頻度）</label>
+            <select id="priority-filter" class="filter-select" onchange="updateFilterUI()">
+              <option value="all">すべて</option>
+              <option value="高">高（よく出る）</option>
+              <option value="中">中</option>
+              <option value="低">低</option>
+            </select>
+          </div>
+          <div class="filter-group" style="grid-column: 1 / -1;">
+            <label for="memory-filter">学習状況（詳細）</label>
+            <select id="memory-filter" class="filter-select" onchange="updateFilterUI()">
+              <option value="all">すべての問題から出題</option>
+              <option value="unanswered">未回答の問題</option>
+              <option value="wrong">過去に間違えた問題 (復習)</option>
+              <option value="perfect">過去に正解した問題のみ</option>
+              <option value="ai-saved">AI解説を保存した問題のみ</option>
+              <option value="bookmark">★ ブックマークした問題のみ</option>
+            </select>
+          </div>
+          <button class="nav-btn secondary" onclick="resetFilters()" style="padding: 10px;">条件をリセット</button>
         </div>
       </div>
+    </details>
 
-      <hr style="border: none; border-top: 1px dashed var(--border); margin: 24px 0;">
-      <h3>🗑️ データ管理</h3>
-      <div class="filter-group">
-        <div style="font-size: 0.9rem; margin-bottom: 8px;">保存したAI解説: <b id="ai-saved-count">0</b> 件</div>
-        <button class="nav-btn secondary" onclick="clearSavedExplanations()" style="margin-bottom: 12px;">保存したAI解説を削除する</button>
-        <button class="nav-btn danger" onclick="resetHistory()">学習記録をリセットする</button>
-        <div style="font-size: 0.8rem; margin-top: 8px; color: var(--text-muted); line-height: 1.5;">
-          ※総解答数、正解数、各問題の正誤履歴がすべて消去されます。<br>
-          （設定したAPIキー・テーマカラー・ブックマークはそのまま保持されます）
-        </div>
-      </div>
+    <div class="mode-grid">
+      <button id="start-ai-btn" class="mode-card ai" onclick="startAIQuiz()"><b>✨ AI網羅特訓</b><span>5問ずつAIが予想問題を生成</span></button>
+      <button id="start-mock-btn" class="mode-card mock" onclick="openMockSetup()"><b>🏆 腕試し</b><span>本番形式・時間制限</span></button>
+      <button id="mock-history-btn" class="mode-card" onclick="openMockHistory()"><b>📊 腕試し履歴</b><span>過去の結果を見る</span></button>
+      <button id="bookmark-open-btn" class="mode-card" onclick="openBookmarks()"><b>★ ブックマーク</b><span>見返す・解く</span></button>
     </div>
+
+    <details class="fold" id="settings-details">
+      <summary>⚙️ 設定・データ管理</summary>
+      <div class="fold-body">
+        <div class="filter-group">
+          <label for="api-key-input">Gemini APIキー（AI機能用）</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="password" id="api-key-input" class="filter-input" placeholder="APIキーを入力..." style="flex: 1;">
+            <button class="nav-btn secondary" onclick="saveApiKey()" style="padding: 12px; width: auto; font-size: 0.9rem;">保存</button>
+          </div>
+          <div id="api-key-status" style="font-size: 0.8rem; margin-top: 6px; color: var(--text-muted);">
+            ※APIキーはあなたの端末内（ブラウザ）にのみ安全に保存されます。
+          </div>
+        </div>
+
+        <div class="filter-group" style="margin-top: 16px;">
+          <label>文字の大きさ</label>
+          <div class="font-size-row" id="font-chips">
+            <button class="chip" data-font="s" onclick="setFontSize('s')">小</button>
+            <button class="chip" data-font="m" onclick="setFontSize('m')">標準</button>
+            <button class="chip" data-font="l" onclick="setFontSize('l')">大</button>
+          </div>
+        </div>
+
+        <hr style="border: none; border-top: 1px dashed var(--border); margin: 20px 0;">
+        <div class="filter-group">
+          <div style="font-size: 0.9rem; margin-bottom: 8px;">保存したAI解説: <b id="ai-saved-count">0</b> 件</div>
+          <button class="nav-btn secondary" onclick="clearSavedExplanations()" style="margin-bottom: 12px;">保存したAI解説を削除する</button>
+          <button class="nav-btn danger" onclick="resetHistory()">学習記録をリセットする</button>
+          <div style="font-size: 0.8rem; margin-top: 8px; color: var(--text-muted); line-height: 1.5;">
+            ※総解答数、正解数、各問題の正誤履歴がすべて消去されます。<br>
+            （設定したAPIキー・テーマカラー・ブックマークはそのまま保持されます）
+          </div>
+        </div>
+      </div>
+    </details>
   </div>
 
   <div id="screen-quiz" class="screen">
@@ -619,6 +683,7 @@
       </div>
     </div>
 
+    <div class="prog-wrap" id="prog-wrap"><div id="prog-fill"></div></div>
     <div id="q-source" class="q-source-badge"></div>
 
     <div id="ai-loading">
@@ -675,6 +740,7 @@
 
     <div class="controls">
       <button class="nav-btn secondary" id="quit-btn" onclick="quitQuiz()">中断</button>
+      <button class="nav-btn secondary" id="prev-btn" onclick="goPrev()" style="display:none" aria-label="前の問題">◀ 前</button>
       <button class="nav-btn" id="next-btn" disabled>回答を選択してください</button>
     </div>
   </div>
@@ -699,7 +765,8 @@
       <!-- 履歴がここに入る -->
     </div>
     
-    <button id="result-back-btn" class="nav-btn" onclick="goToStart()" style="margin-top: 24px;">設定・成績画面に戻る</button>
+    <button id="retry-wrong-btn" class="nav-btn" onclick="retryWrong()" style="margin-top: 24px; display: none; background: linear-gradient(135deg, #ef4444, #f97316);">❌ 間違えた問題をもう一度解く</button>
+    <button id="result-back-btn" class="nav-btn" onclick="goToStart()" style="margin-top: 12px;">設定・成績画面に戻る</button>
   </div>
 
   <div id="screen-bookmarks" class="screen">
@@ -824,8 +891,9 @@
   let mockLastTick = 0;
 
   let userMemory = {
-    theme: 'light',
+    theme: (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light',
     subject: 'senmon',
+    prefs: {},
     stats: { total: 0, correct: 0 },     // 旧形式（専門のみ）。statsBy に引き継ぐ
     statsBy: {},
     history: {},
@@ -948,6 +1016,7 @@
   function finishInit() {
     loadMatomeNotes().catch(e => console.warn("まとめノート読み込みスキップ:", e));
     applyTheme(); 
+    applyPrefs();
     updateMemoryUI(); 
     loadApiKey();
     switchScreen('screen-start');
@@ -994,7 +1063,7 @@
       saveUserData();
       updateMemoryUI(); 
       updateFilterUI(); 
-      alert("学習記録をリセットしました。");
+      showToast("学習記録をリセットしました");
     }
   };
 
@@ -1008,6 +1077,7 @@
         if (!userMemory.history) userMemory.history = {};
         if (!userMemory.mockSeen) userMemory.mockSeen = {};
         if (!userMemory.bookmarks) userMemory.bookmarks = {};
+        if (!userMemory.prefs) userMemory.prefs = {};
         if (!userMemory.mockThemes) userMemory.mockThemes = {};
         // 旧形式の通算成績（専門科目のみ）を科目別に引き継ぐ
         if (!userMemory.statsBy) {
@@ -1171,7 +1241,8 @@
     document.getElementById('ms-rate').textContent = `${rate}%`;
     updateSavedExplanationCount();
     
-    if (masterGenres && masterGenres.length > 0) {
+    const rd = document.getElementById('radar-details');
+    if (masterGenres && masterGenres.length > 0 && rd && rd.open) {
         drawRadarChart();
     }
   }
@@ -1227,8 +1298,7 @@
     document.getElementById('lbl-topic').textContent = sj.topicLabel;
     document.getElementById('subject-exam-name').textContent = sj.examName;
     document.getElementById('memory-subject').textContent = sj.short;
-    document.getElementById('start-mock-btn').textContent = `🏆 腕試しモード（${mockRuleOf(currentSubject).summary}）`;
-    document.getElementById('start-ai-btn').textContent = `✨ AI予想問題 網羅特訓モード (5問ずつ生成)`;
+    document.getElementById('start-mock-btn').innerHTML = `<b>🏆 腕試し</b><span>${escapeHtml(mockRuleOf(currentSubject).summary)}</span>`;
   }
 
   window.handleManualUpload = function(event) {
@@ -1471,11 +1541,41 @@
       startBtn.textContent = '対象問題がありません';
     } else {
       countEl.textContent = `出題対象: ${currentTargetQuestions.length} 問`;
-      countEl.style.background = 'var(--info-bg)';
+      countEl.style.background = 'var(--card)';
       countEl.style.color = 'var(--primary)';
       startBtn.disabled = false;
-      startBtn.textContent = '過去問演習を開始する';
+      const cs = el('count-filter').value;
+      const n = cs === 'all' ? currentTargetQuestions.length : Math.min(parseInt(cs, 10), currentTargetQuestions.length);
+      startBtn.textContent = `▶ 過去問演習を始める（${n}問）`;
     }
+
+    // 「出題する問題」「出題数」のチップに現在の選択を反映
+    const memCount = (fn) => allQuestions.filter(q => keys.every(o => match[o](q)) && fKw(q) && fn(q)).length;
+    const hist = (q) => userMemory.history[q.id];
+    const chipCounts = {
+      all: memCount(() => true),
+      unanswered: memCount(q => { const h = hist(q); return !h || (h.c === 0 && h.w === 0); }),
+      wrong: memCount(q => { const h = hist(q); return h && h.w > 0; }),
+      bookmark: allQuestions.concat(aiBookmarkQuestions(currentSubject)).filter(q => keys.every(o => match[o](q)) && fKw(q) && isBookmarked(q.id)).length
+    };
+    const chipNames = { all: 'すべて', unanswered: '未回答', wrong: '間違えた問題', bookmark: '★ ブックマーク' };
+    document.querySelectorAll('#memory-chips .chip').forEach(c => {
+      const k = c.dataset.mem;
+      c.textContent = `${chipNames[k]}（${chipCounts[k]}）`;
+      c.classList.toggle('on', currentMemory === k);
+      c.disabled = k !== 'all' && chipCounts[k] === 0 && currentMemory !== k;
+    });
+    document.querySelectorAll('#count-chips .chip').forEach(c => c.classList.toggle('on', c.dataset.count === el('count-filter').value));
+
+    const parts = [];
+    if (cur.year !== 'all') parts.push(cur.year);
+    if (cur.genre !== 'all') parts.push(cur.genre);
+    if (cur.sub !== 'all') parts.push(cur.sub);
+    if (cur.topic !== 'all') parts.push(cur.topic);
+    if (cur.prio !== 'all') parts.push(`優先度${cur.prio}`);
+    if (currentKeyword) parts.push(`「${currentKeyword}」`);
+    if (!['all', 'unanswered', 'wrong', 'bookmark'].includes(currentMemory)) parts.push(el('memory-filter').selectedOptions[0].text.replace(/\s*\(.*$/, ''));
+    el('filter-summary').textContent = parts.length ? parts.join(' / ') : '条件なし';
 
     const resumeArea = document.getElementById('resume-area');
     const saved = userMemory.savedSession;
@@ -1535,7 +1635,104 @@
   function switchScreen(screenId) {
     document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
     document.getElementById(screenId).classList.add('active');
+    document.body.setAttribute('data-screen', screenId);
+    if (screenId !== 'screen-start' && screenId !== 'screen-loading') {
+      window.scrollTo(0, 0);
+      pushInnerState();
+    }
   }
+
+  // --- 戻るボタン（ブラウザ／スマホ）の扱い ---
+  // スタート画面以外へ進むとき履歴を1つ積み、戻るボタンが押されたらアプリ内で「前の画面」に戻る
+  let innerPushed = false;
+  function pushInnerState() {
+    if (innerPushed) return;
+    try { history.pushState({ quizInner: 1 }, ''); innerPushed = true; } catch (e) {}
+  }
+  function activeScreenId() {
+    const el = document.querySelector('.screen.active');
+    return el ? el.id : '';
+  }
+  function isMockExamActive() {
+    return !!(isMockMode && mockState && (mockState.phase === 'exam' || mockState.phase === 'extra'));
+  }
+  window.addEventListener('popstate', () => {
+    if (!innerPushed) return;
+    innerPushed = false;
+    const id = activeScreenId();
+    if (id === 'screen-start' || id === 'screen-loading') return;
+    if (id === 'screen-quiz') {
+      if (currentAiJob && !currentAiJob.aborted) {
+        if (confirm("AIの問題生成をやめてスタート画面に戻りますか？")) { window.goToStart(); } else { pushInnerState(); }
+      } else if (isMockExamActive()) {
+        if (confirm("試験を中断してスタート画面に戻りますか？\n解答と残り時間は保存され、「続きから再開する」で再開できます。")) {
+          stopMockTimer(); saveCurrentSession(); window.goToStart();
+        } else { pushInnerState(); }
+      } else {
+        saveCurrentSession(); window.goToStart();
+      }
+      return;
+    }
+    if (id === 'screen-result' && window.isViewingPastMock) { window.openMockHistory(); return; }
+    window.goToStart();
+  });
+  window.addEventListener('beforeunload', (e) => {
+    if (activeScreenId() === 'screen-quiz' && isMockExamActive()) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  // --- 軽いお知らせ（alertの代わり） ---
+  let toastTimer = null;
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  // --- スタート画面の設定（出題数・出題順・文字の大きさ）を覚える ---
+  const FONT_PX = { s: '14px', m: '16px', l: '18px' };
+  function savePref(k, v) {
+    userMemory.prefs = userMemory.prefs || {};
+    userMemory.prefs[k] = v;
+    saveUserData();
+  }
+  window.setFontSize = function(k) {
+    if (!FONT_PX[k]) k = 'm';
+    document.documentElement.style.fontSize = FONT_PX[k];
+    document.querySelectorAll('#font-chips .chip').forEach(c => c.classList.toggle('on', c.dataset.font === k));
+    savePref('font', k);
+  };
+  function applyPrefs() {
+    const pf = userMemory.prefs || {};
+    if (pf.order && document.querySelector(`#order-filter option[value="${pf.order}"]`)) document.getElementById('order-filter').value = pf.order;
+    if (pf.count && document.querySelector(`#count-filter option[value="${pf.count}"]`)) document.getElementById('count-filter').value = pf.count;
+    document.documentElement.style.fontSize = FONT_PX[pf.font] || FONT_PX.m;
+    document.querySelectorAll('#font-chips .chip').forEach(c => c.classList.toggle('on', c.dataset.font === (pf.font || 'm')));
+  }
+  window.onPrefChange = function() {
+    savePref('order', document.getElementById('order-filter').value);
+    savePref('count', document.getElementById('count-filter').value);
+    updateFilterUI();
+  };
+  window.setMemoryChip = function(v) {
+    document.getElementById('memory-filter').value = v;
+    updateFilterUI();
+  };
+  window.setCountChip = function(v) {
+    document.getElementById('count-filter').value = v;
+    onPrefChange();
+  };
+  window.resetFilters = function() {
+    ['year-filter', 'genre-filter', 'subgenre-filter', 'topic-filter', 'priority-filter', 'memory-filter'].forEach(id => { document.getElementById(id).value = 'all'; });
+    document.getElementById('keyword-filter').value = '';
+    updateFilterUI();
+  };
+  document.addEventListener('DOMContentLoaded', () => {
+    const rd = document.getElementById('radar-details');
+    if (rd) rd.addEventListener('toggle', () => { if (rd.open && masterGenres && masterGenres.length) drawRadarChart(); });
+  });
 
   window.goToStart = function() {
     if (currentAiJob && !currentAiJob.aborted) { currentAiJob.cancel(); hideAiLoading(); }
@@ -1613,7 +1810,7 @@
   window.toggleCurrentBookmark = function() {
     const q = filteredQuestions[curIdx];
     if (!q) return;
-    toggleBookmark(q);
+    showToast(toggleBookmark(q) ? '★ ブックマークしました' : 'ブックマークを外しました');
     refreshBookmarkButton();
     if (isMockMode && mockState && (mockState.phase === 'exam' || mockState.phase === 'extra')) updateMockStatus();
     updateBookmarkOpenButton();
@@ -1621,7 +1818,7 @@
 
   function updateBookmarkOpenButton() {
     const btn = document.getElementById('bookmark-open-btn');
-    if (btn) btn.textContent = `★ ブックマークを見る（${bookmarkCount(currentSubject)}）`;
+    if (btn) btn.innerHTML = `<b>★ ブックマーク（${bookmarkCount(currentSubject)}）</b><span>見返す・解く</span>`;
   }
 
   // --- ブックマーク一覧の画面 ---
@@ -2785,6 +2982,8 @@ ${AI_JSON_FORMAT}
   function renderMockExamQuestion() {
     const q = filteredQuestions[curIdx];
     const answers = mockAnswerMap();
+    document.getElementById('prog-wrap').style.display = 'none';
+    document.getElementById('prev-btn').style.display = 'none';
 
     document.getElementById('prog-label').textContent = `問 ${curIdx + 1} / ${filteredQuestions.length}`;
     refreshBookmarkButton();
@@ -3234,10 +3433,13 @@ ${AI_JSON_FORMAT}`;
     }
     document.getElementById('mock-controls').style.display = 'none';
     document.getElementById('next-btn').style.display = '';
+    document.getElementById('prog-wrap').style.display = '';
+    document.getElementById('prev-btn').style.display = curIdx > 0 ? '' : 'none';
 
     const q = filteredQuestions[curIdx];
 
     document.getElementById('prog-label').textContent = `問 ${curIdx + 1} / ${filteredQuestions.length}`;
+    document.getElementById('prog-fill').style.width = `${Math.round((Object.keys(sessionAnswers).filter(id => filteredQuestions.some(x => x.id === id)).length / Math.max(1, filteredQuestions.length)) * 100)}%`;
     refreshBookmarkButton();
     document.getElementById('cat-label').textContent = [q.genre, q.subgenre, (q.topic && q.topic !== q.subgenre) ? q.topic : '']
       .filter(Boolean).join(' > ');
@@ -3376,6 +3578,12 @@ ${AI_JSON_FORMAT}`;
     }
 
     renderQuestion(); 
+    // 解説が画面の下に隠れているときは、結果が見える位置までスクロールする
+    const box = document.getElementById('res-status');
+    if (box) {
+      const top = box.getBoundingClientRect().top;
+      if (top > window.innerHeight * 0.6) window.scrollTo({ top: window.scrollY + top - Math.round(window.innerHeight * 0.35), behavior: 'smooth' });
+    }
   }
 
   // AI詳細解説を生成する（混雑時は軽量モデルに切り替え）
@@ -3488,6 +3696,44 @@ ${answerText}`;
     }
   }
 
+  window.goPrev = function() {
+    if (curIdx > 0 && !isMockExamActive()) {
+      curIdx--;
+      renderQuestion();
+      window.scrollTo(0, 0);
+      saveCurrentSession();
+    }
+  };
+
+  // キーボード操作: 1〜5=選択 / Enter・→=次へ / ←=前へ / B=ブックマーク
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (activeScreenId() !== 'screen-quiz') return;
+    const tag = (e.target && e.target.tagName) || '';
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;
+    if (document.getElementById('ai-loading').style.display === 'block') return;
+    if (document.querySelector('.note-modal.show')) return;
+    const k = e.key;
+    const q = filteredQuestions[curIdx];
+    if (!q) return;
+    if (/^[1-5]$/.test(k)) {
+      const idx = parseInt(k, 10) - 1;
+      if (idx >= q.options.length) return;
+      if (isMockExamActive()) { selectMockOption(idx); }
+      else if (!sessionAnswers.hasOwnProperty(q.id)) { selectOption(idx); }
+      e.preventDefault();
+    } else if (k === 'ArrowRight' || ((k === 'Enter' || k === ' ') && tag !== 'BUTTON')) {
+      if (isMockExamActive()) { if (k === 'ArrowRight') mockMove(1); }
+      else { const nb = document.getElementById('next-btn'); if (nb && !nb.disabled && nb.onclick) nb.onclick(); }
+      e.preventDefault();
+    } else if (k === 'ArrowLeft') {
+      if (isMockExamActive()) mockMove(-1); else goPrev();
+      e.preventDefault();
+    } else if (k === 'b' || k === 'B') {
+      toggleCurrentBookmark();
+    }
+  });
+
   function saveCurrentSession() {
     if (window.isViewingPastMock) return; 
 
@@ -3595,6 +3841,11 @@ ${answerText}`;
     }
   }
 
+  window.retryWrong = function() {
+    const list = (window.retryWrongList || []).slice();
+    if (list.length) startQuizWith(list);
+  };
+
   window.showResults = function() {
     stopMockTimer();
     const analysisBox = document.getElementById('mock-analysis');
@@ -3626,6 +3877,17 @@ ${answerText}`;
 
     document.querySelector('input[name="res-filter"][value="all"]').checked = true;
     window.renderHistoryUI(filteredQuestions); 
+
+    const extraAns = (isMockMode && mockState && mockState.extraAnswers) || {};
+    const wrongList = filteredQuestions.filter(q => {
+      const has = sessionAnswers.hasOwnProperty(q.id);
+      const idx = has ? sessionAnswers[q.id] : extraAns[q.id];
+      return (has || extraAns.hasOwnProperty(q.id)) && hasAnswerOf(q) && !isCorrectAnswer(q, idx);
+    });
+    window.retryWrongList = wrongList;
+    const retryBtn = document.getElementById('retry-wrong-btn');
+    retryBtn.style.display = wrongList.length ? '' : 'none';
+    retryBtn.textContent = `❌ 間違えた ${wrongList.length} 問をもう一度解く`;
 
     const backBtn = document.getElementById('result-back-btn');
     if (window.isViewingPastMock) {
