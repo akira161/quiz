@@ -615,6 +615,7 @@
       </div>
 
       <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 12px; text-align: center;">※少々お待ちください</div>
+      <button id="ai-cancel-btn" class="nav-btn secondary" style="margin-top: 20px;" onclick="cancelAiGeneration()">✕ 生成をやめる</button>
     </div>
 
     <div class="question-box" id="q-text"></div>
@@ -906,6 +907,11 @@
   }
 
   window.openHelp = function() {
+    if (currentAiJob && !currentAiJob.aborted) {
+      if (!confirm("AIの問題生成を中止して、使い方を開きますか？")) return;
+      currentAiJob.cancel();
+      hideAiLoading();
+    }
     switchScreen('screen-help');
     window.scrollTo(0, 0);
   };
@@ -1478,6 +1484,7 @@
   }
 
   window.goToStart = function() {
+    if (currentAiJob && !currentAiJob.aborted) { currentAiJob.cancel(); hideAiLoading(); }
     stopMockTimer();
     window.isViewingPastMock = false;
     updateMemoryUI();
@@ -1938,7 +1945,7 @@
 
   window.startMockExam = async function() {
     const source = document.getElementById('mock-source').value;
-    const sourceLabel = document.getElementById('mock-source').selectedOptions[0].text;
+    let sourceLabel = document.getElementById('mock-source').selectedOptions[0].text;
     const timeLimitSec = parseInt(document.getElementById('mock-time').value, 10) * 60;
 
     if (userMemory.savedSession && !confirm("中断中のデータがあります。新しく試験を始めると破棄されます。よろしいですか？")) return;
@@ -1953,14 +1960,22 @@
     } else {
       const apiKey = localStorage.getItem('my_gemini_api_key');
       if (!apiKey) { alert("AI予想問題を使うには、スタート画面の設定エリアで Gemini APIキーを保存してください。"); return; }
+      const job = startAiJob('mock');
+      let built;
       try {
-        questions = await buildAIMockSet(apiKey, aiMockPlan(source));
+        built = await buildAIMockSet(apiKey, aiMockPlan(source), job);
       } catch (error) {
+        endAiJob(job);
+        if (error instanceof AiCancelled || job.aborted) return;   // 「生成をやめる」で中止した場合は何もしない
         console.error(error);
         alert("問題生成に失敗しました: " + error.message);
         goToStart();
         return;
       }
+      endAiJob(job);
+      if (job.aborted) return;
+      questions = built.questions;
+      if (built.filled > 0) sourceLabel += `（AIが作れなかった${built.filled}問は過去問で補充）`;
     }
 
     if (questions.length === 0) { alert("出題できる問題がありません。"); return; }
@@ -2055,6 +2070,129 @@
   };
   const AI_BATCH_SIZE = 4;
 
+  // AIに出力させるJSONの形（正答は「番号」と「正解の選択肢の文章」の両方を出させ、食い違いを検出できるようにする）
+  const AI_JSON_FORMAT = `{"questions": [{"theme": "取り上げたテーマ名", "question": "問題文", "options": ["選択肢の文章1", "選択肢の文章2", "選択肢の文章3", "選択肢の文章4", "選択肢の文章5"], "correct_option": "正解の選択肢の文章（optionsの中のものと一字一句同じ）", "answer": 0, "explanation": "解説"}]}
+・options は必ず5つにし、先頭に ①・1. などの番号は付けないこと。
+・answer は正解の番号で、最初の選択肢を 0 とする 0〜4 の整数にすること。`;
+
+  // --- AI生成の中止 ---
+  class AiCancelled extends Error { constructor() { super('cancelled'); this.name = 'AiCancelled'; } }
+  // AIが答えたが、使える問題が1つもなかった（通信や認証のエラーとは区別する）
+  class AiNoUsable extends Error { constructor(msg) { super(msg); this.name = 'AiNoUsable'; } }
+  let currentAiJob = null;
+
+  function startAiJob(kind) {
+    if (currentAiJob && !currentAiJob.aborted) currentAiJob.cancel();
+    const controller = new AbortController();
+    const job = { kind, controller, aborted: false, cancel() { this.aborted = true; controller.abort(); } };
+    currentAiJob = job;
+    return job;
+  }
+  function endAiJob(job) { if (currentAiJob === job) currentAiJob = null; }
+  function throwIfCancelled(job) { if (job && job.aborted) throw new AiCancelled(); }
+  // 中止されたらすぐ待機をやめる
+  function aiSleep(job, ms) {
+    return new Promise(resolve => {
+      const t = setTimeout(resolve, ms);
+      if (job) job.controller.signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+    });
+  }
+
+  // 生成中は「問題の表示」と下のボタン（中断／次へ）を隠し、「生成をやめる」だけを出す
+  function showAiLoading() {
+    document.getElementById('ai-loading').style.display = 'block';
+    const controls = document.querySelector('#screen-quiz .controls');
+    if (controls) controls.style.display = 'none';
+  }
+  function hideAiLoading() {
+    document.getElementById('ai-loading').style.display = 'none';
+    const controls = document.querySelector('#screen-quiz .controls');
+    if (controls) controls.style.display = '';
+  }
+
+  // 網羅特訓で、直前までの問題の画面に戻る
+  function restorePracticeView() {
+    hideAiLoading();
+    document.getElementById('q-text').style.display = 'block';
+    document.getElementById('opt-box').style.display = 'flex';
+    document.getElementById('q-source').style.display = 'inline-flex';
+    renderQuestion();
+  }
+
+  window.cancelAiGeneration = function() {
+    const job = currentAiJob;
+    if (!job || job.aborted) return;
+    job.cancel();
+    if (job.kind === 'practice' && filteredQuestions.length > 0) restorePracticeView();
+    else { hideAiLoading(); goToStart(); }
+  };
+
+  // --- AIの応答の検証・整形 ---
+  // JSON本文を取り出す（```json で囲まれていても、前後に説明文があっても読めるようにする）
+  function extractAiQuestionList(text) {
+    let t = String(text ?? '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    let parsed;
+    try { parsed = JSON.parse(t); }
+    catch (e) {
+      const a = t.indexOf('{'), b = t.lastIndexOf('}');
+      if (a < 0 || b <= a) throw new AiNoUsable("AIの応答を読み取れませんでした");
+      try { parsed = JSON.parse(t.slice(a, b + 1)); } catch (e2) { throw new AiNoUsable("AIの応答を読み取れませんでした"); }
+    }
+    const list = Array.isArray(parsed) ? parsed : parsed && parsed.questions;
+    if (!Array.isArray(list) || list.length === 0) throw new AiNoUsable("AIの応答に問題が含まれていませんでした");
+    return list;
+  }
+
+  // 選択肢の先頭の番号（①、1. 、(1) など）を取り除く。「1.5 m」のような数値は消さない
+  function stripOptionNumber(str) {
+    return String(str ?? '').trim()
+      .replace(/^[①-⑤]\s*/, '')
+      .replace(/^[（(]?[1-5１-５][)）.．、:：]\s+/, '')
+      .replace(/^選択肢\s*[1-5１-５]\s*[:：.．]\s*/, '')
+      .trim();
+  }
+  const normOptionKey = str => String(str).replace(/[\s\u3000]/g, '').toLowerCase();
+
+  // 1問分を検証して整える。使えない場合は { ok: false, error } を返す
+  // 正答は「正解の選択肢の文章（correct_option）」を最優先にして特定し、番号（answer: 0〜4）はその次に使う（番号のずれによる誤採点を防ぐ）
+  function normalizeAiQuestion(raw) {
+    if (!raw || typeof raw !== 'object') return { ok: false, error: '形式が不正' };
+    const question = String(raw.question ?? '').trim();
+    if (question.length < 8) return { ok: false, error: '問題文がない・短すぎる' };
+    if (!Array.isArray(raw.options)) return { ok: false, error: '選択肢がない' };
+    const options = raw.options.map(stripOptionNumber);
+    if (options.length !== 5 || options.some(o => o === '')) return { ok: false, error: `選択肢が5つではない（${options.length}）` };
+    if (new Set(options.map(normOptionKey)).size !== 5) return { ok: false, error: '同じ選択肢がある' };
+
+    let idx = -1;
+    const co = raw.correct_option ?? raw.correctOption;
+    if (co != null && String(co).trim() !== '') {
+      const key = normOptionKey(stripOptionNumber(co));
+      const hits = options.map((o, i) => normOptionKey(o) === key ? i : -1).filter(i => i >= 0);
+      if (hits.length === 1) idx = hits[0];
+    }
+    if (idx < 0) {
+      let a = raw.answer;
+      if (typeof a === 'string') {
+        const t = a.trim().replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+        if (/^[①-⑤]$/.test(t)) a = t.charCodeAt(0) - 0x2460;                 // ①〜⑤ は番号（1始まり）の表記
+        else if (/^(?:選択肢)?\s*[1-5]\s*(?:番)?$/.test(t) && /[選番]/.test(t)) a = parseInt(t.replace(/\D/g, ''), 10) - 1;
+        else if (/^[0-9]+$/.test(t)) a = parseInt(t, 10);                      // 数字だけの文字列は、指示どおり0始まり
+      }
+      if (Number.isInteger(a) && a >= 0 && a <= 4) idx = a;
+    }
+    if (idx < 0) return { ok: false, error: '正答を特定できない' };
+
+    return {
+      ok: true,
+      question: question,
+      options: options,
+      answer: idx,
+      explanation: String(raw.explanation ?? '').trim() || '（解説なし）',
+      theme: String(raw.theme ?? '').trim()
+    };
+  }
+
   // AIで作る問題の構成。source: 'aiall'=すべてAI / 'ai'=AI＋過去問
   // 専門は従来どおり。基礎・適性は、過去問1回あたりの分野別の出題数に合わせる（群・分野ごとにAIで作る）
   function aiMockPlan(source) {
@@ -2093,7 +2231,7 @@
   };
 
   // AI予想問題のセットを作る（分野ごとに4問ずつ生成し、重複を避けるため既出の問題文を渡す）
-  async function buildAIMockSet(apiKey, plan) {
+  async function buildAIMockSet(apiKey, plan, job) {
     switchScreen('screen-quiz');
     document.getElementById('q-text').style.display = 'none';
     document.getElementById('opt-box').style.display = 'none';
@@ -2106,7 +2244,7 @@
     const totalPast = plan.reduce((sum, p) => sum + p.past, 0);
 
     // ローディングとプログレスバーの表示
-    document.getElementById('ai-loading').style.display = 'block';
+    showAiLoading();
     document.getElementById('ai-progress-container').style.display = 'block';
     document.getElementById('ai-loading-msg').innerHTML = totalPast > 0
       ? `本番形式の${totalAiNeed + totalPast}問セットを構築中...<br>（AI生成${totalAiNeed}問 ＋ 過去問${totalPast}問）`
@@ -2115,15 +2253,17 @@
     let aiGeneratedCount = 0;
 
     const updateProgress = (stepMsg, addedCount = 0) => {
+      if (job.aborted) return;
       aiGeneratedCount += addedCount;
-      const percent = Math.round((aiGeneratedCount / totalAiNeed) * 100);
+      const percent = Math.min(100, Math.round((aiGeneratedCount / totalAiNeed) * 100));
       document.getElementById('ai-progress-text').textContent = stepMsg;
       document.getElementById('ai-progress-text').style.color = '#a855f7'; 
-      document.getElementById('ai-progress-count').textContent = `${aiGeneratedCount} / ${totalAiNeed} 問`;
+      document.getElementById('ai-progress-count').textContent = `${Math.min(aiGeneratedCount, totalAiNeed)} / ${totalAiNeed} 問`;
       document.getElementById('ai-progress-bar').style.width = `${percent}%`;
     };
 
     const retryCallback = (retriesLeft, isLite) => {
+      if (job.aborted) return;
       const modelName = isLite ? "軽量(Lite)モデル" : "標準モデル";
       document.getElementById('ai-progress-text').textContent = `API混雑中... 再試行(${modelName})`;
       document.getElementById('ai-progress-text').style.color = '#eab308'; 
@@ -2135,17 +2275,42 @@
       const usedThemes = new Set();      // この試験で扱うテーマ（Issue）。重複させない
       const examBigrams = [];            // この試験の問題の文章（似た問題の検出用）
       let examPrevText = "";             // この試験で作成済みの問題（AIに重複を避けさせる）
+      let filled = 0;                    // AIが作れず、過去問で補った問題数
       for (let gi = 0; gi < plan.length; gi++) {
         const { genre, ai, past } = plan[gi];
         const shortName = genre.replace('・建築物衛生管理', '');
         const batches = Math.ceil(ai / AI_BATCH_SIZE);
         const genreQuestions = [];
+        let missing = 0;
         for (let bi = 0; bi < batches; bi++) {
+          throwIfCancelled(job);
           const count = Math.min(AI_BATCH_SIZE, ai - bi * AI_BATCH_SIZE);
           updateProgress(`「${shortName}」を作成中 (${bi + 1}/${batches})...`, 0);
           // 過去問のテーマを1問ずつ指定して作らせる（同じテーマ・よく出る話題ばかりになるのを防ぐ）
           const seeds = pickThemeSeeds(genre, count, usedThemes);
-          const batch = await fetchMockAIBatch(genre, count, apiKey, false, examPrevText, retryCallback, seeds);
+          let batch;
+          try {
+            batch = await fetchMockAIBatch(genre, count, apiKey, false, examPrevText, retryCallback, seeds, job);
+          } catch (e) {
+            if (!(e instanceof AiNoUsable)) throw e;   // 通信・認証などのエラーは、そのまま失敗として扱う
+            console.warn("使える問題が得られませんでした。作り直します:", e.message);
+            batch = [];
+          }
+
+          // 使えない問題を除いて足りなくなった分は、別のテーマで作り直す（最大2回まで）
+          for (let attempt = 0; batch.length < count && attempt < 2; attempt++) {
+            updateProgress("足りない問題を作り直し中...", 0);
+            try {
+              const need = count - batch.length;
+              const more = await fetchMockAIBatch(genre, need, apiKey, false, examPrevText, retryCallback, pickThemeSeeds(genre, need, usedThemes), job);
+              batch.push(...more);
+            } catch (e) {
+              if (e instanceof AiCancelled) throw e;
+              console.warn("足りない問題の作り直しに失敗しました:", e.message);
+              break;
+            }
+          }
+          missing += Math.max(0, count - batch.length);
 
           // すでに作成した問題と似すぎているものは、別のテーマで作り直す（最大2回まで）
           const findSimilar = () => {
@@ -2165,9 +2330,13 @@
             try {
               const reSeeds = pickThemeSeeds(genre, dupIdx.length, usedThemes);
               const prev = examPrevText + batch.map(q => "・" + q.question.replace(/\s+/g, ' ').slice(0, 60)).join("\n") + "\n";
-              const redo = await fetchMockAIBatch(genre, dupIdx.length, apiKey, false, prev, retryCallback, reSeeds);
+              const redo = await fetchMockAIBatch(genre, dupIdx.length, apiKey, false, prev, retryCallback, reSeeds, job);
               dupIdx.forEach((di, k) => { if (redo[k]) batch[di] = redo[k]; });
-            } catch (e) { console.warn("作り直しに失敗したため、そのまま使います:", e.message); break; }
+            } catch (e) {
+              if (e instanceof AiCancelled) throw e;
+              console.warn("作り直しに失敗したため、そのまま使います:", e.message);
+              break;
+            }
           }
 
           batch.forEach(q => {
@@ -2177,20 +2346,23 @@
           genreQuestions.push(...batch);
           updateProgress("インターバル待機中...", batch.length);
           // APIの連続呼び出し制限を避けるための待機
-          if (bi < batches - 1 || gi < plan.length - 1) await new Promise(r => setTimeout(r, 1500));
+          if (bi < batches - 1 || gi < plan.length - 1) { await aiSleep(job, 1500); throwIfCancelled(job); }
         }
-        genreQuestions.push(...pickPastForAI(genre, past, usedThemes));
+        // AIが作れなかった分は過去問で補う
+        filled += missing;
+        genreQuestions.push(...pickPastForAI(genre, past + missing, usedThemes));
         result.push(...shuffleArray(genreQuestions));
       }
+      throwIfCancelled(job);
       updateProgress("全問題の準備完了！", 0);
       // 適性科目は分野ごとの区切りがないので、全体を混ぜる
-      return mockRuleOf(currentSubject).allRequired ? shuffleArray(result) : result;
+      return { questions: mockRuleOf(currentSubject).allRequired ? shuffleArray(result) : result, filled };
     } finally {
-      document.getElementById('ai-loading').style.display = 'none';
+      hideAiLoading();
     }
   }
 
-  async function fetchMockAIBatch(genre, count, apiKey, useLiteModel = false, previousQuestionsText = "", onRetry = null, seeds = []) {
+  async function fetchMockAIBatch(genre, count, apiKey, useLiteModel = false, previousQuestionsText = "", onRetry = null, seeds = [], job = null) {
     const modelName = useLiteModel ? 'gemini-3.5-flash-lite' : 'gemini-3.5-flash';
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     
@@ -2210,7 +2382,8 @@
     const recentPrompt = recent.length > 0 ? `\n\n【最近の模試で出したテーマ（これらは避ける）】\n${recent.join('、')}` : "";
 
     const prompt = `あなたは${SUBJECTS[currentSubject].examName}の試験委員です。「${genre}」分野について、本番試験と同等の難易度と形式で、五肢択一問題を【${count}問】作成してください。${SUBJECT_AI_NOTES[currentSubject] ? '\n' + SUBJECT_AI_NOTES[currentSubject] : ''}
-図表を使わずテキストのみで解答できる問題にし、JSONフォーマット（{"questions": [{"theme": "取り上げたテーマ名", "question": "...", "options": ["...","...","...","...","..."], "answer": 0, "explanation": "..."}]}）で出力してください。
+図表を使わずテキストのみで解答できる問題にし、次のJSONフォーマットで出力してください。
+${AI_JSON_FORMAT}
 問題文や選択肢は、過去問と全く同じにならないよう工夫してください。
 ※重要：問題文、選択肢、解説にはMarkdown記法（見出し、太字など）を使い、数式が含まれる場合は必ずLaTeX記法（インラインは $...$ 、ブロックは $$...$$）を使用してください。${getTrendPrompt(genre)}${seedPrompt}${recentPrompt}${avoidPrompt}`;
 
@@ -2219,25 +2392,34 @@
     let retries = 2;
     while (retries >= 0) {
       try {
-        const res = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        throwIfCancelled(job);
+        const res = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: job ? job.controller.signal : undefined });
         const data = await res.json();
+        throwIfCancelled(job);
         
         if (!res.ok) {
            if (res.status === 429 || res.status === 503) {
                if (!useLiteModel) {
                    console.warn(`API Busy (${res.status}). Switching to Lite model for this batch.`);
                    if (onRetry) onRetry(retries, true);
-                   return fetchMockAIBatch(genre, count, apiKey, true, previousQuestionsText, onRetry, seeds); 
+                   return fetchMockAIBatch(genre, count, apiKey, true, previousQuestionsText, onRetry, seeds, job); 
                }
                throw new Error(`API Busy (${res.status}) - Lite model also failed.`);
            }
            throw new Error(data.error?.message || "Unknown API Error");
         }
         
-        const parsed = JSON.parse(data.candidates[0].content.parts[0].text);
-        if (!parsed.questions || parsed.questions.length === 0) throw new Error("Empty AI Response");
+        const list = extractAiQuestionList(data.candidates?.[0]?.content?.parts?.[0]?.text);
+        // 形式が不正な問題（選択肢の数・正答が特定できない等）は除く
+        const valid = [];
+        list.slice(0, count + 2).forEach((raw, rawIdx) => {
+          const r = normalizeAiQuestion(raw);
+          if (r.ok) valid.push({ ...r, rawIdx });
+          else console.warn(`AIの問題を除外しました（${r.error}）`);
+        });
+        if (valid.length === 0) throw new AiNoUsable("AIの応答に使える問題がありませんでした");
 
-        return parsed.questions.slice(0, count).map((q, idx) => ({
+        return valid.slice(0, count).map((q, idx) => ({
           id: `MockAI-${genre}-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 9)}`,
           subject: currentSubject,
           hasAnswer: true,
@@ -2245,7 +2427,7 @@
           qNum: "-",
           genre: genre,
           subgenre: "総合",
-          theme: String(q.theme || (seeds[idx] && seeds[idx].theme) || '').trim(),
+          theme: q.theme || (seeds[q.rawIdx] && seeds[q.rawIdx].theme) || '',
           question: q.question,
           options: q.options,
           answer: q.answer,
@@ -2253,11 +2435,13 @@
           imageUrl: ""
         }));
       } catch (e) {
+        if (e instanceof AiCancelled || e.name === 'AbortError' || (job && job.aborted)) throw new AiCancelled();
         console.warn(`Fetch failed for ${genre} (${count} questions), retries left: ${retries}. Error: ${e.message}`);
         retries--;
         if (retries < 0) throw e;
         if (onRetry) onRetry(retries, useLiteModel);
-        await new Promise(r => setTimeout(r, 3000));
+        await aiSleep(job, 3000);
+        throwIfCancelled(job);
       }
     }
   }
@@ -2653,12 +2837,14 @@
     clearSavedSession();
   }
 
-  async function generateAIQuestionsBatch(useLiteModel = false) {
+  async function generateAIQuestionsBatch(useLiteModel = false, job = null) {
+    const ownJob = !job;
+    job = job || startAiJob('practice');
     document.getElementById('q-text').style.display = 'none';
     document.getElementById('q-image-container').style.display = 'none';
     document.getElementById('opt-box').style.display = 'none';
     document.getElementById('q-source').style.display = 'none';
-    document.getElementById('ai-loading').style.display = 'block';
+    showAiLoading();
     document.getElementById('ai-progress-container').style.display = 'none'; 
     
     const aiLoadingMsg = document.getElementById('ai-loading-msg');
@@ -2670,7 +2856,6 @@
 
     document.getElementById('exp-box').classList.remove('show');
     document.getElementById('next-btn').disabled = true;
-    document.getElementById("quit-btn").textContent = "終了して結果を見る";
     
     const genre = document.getElementById('genre-filter').value;
     const subgenre = document.getElementById('subgenre-filter').value;
@@ -2719,16 +2904,7 @@ ${refText}${getTrendPrompt(genre)}${askedPrompt}
 ・問題文、選択肢、解説文はMarkdown記法（見出し、太字など）を用いて構造化し、数式を使用する場合は必ずLaTeX記法（インラインは $...$、ブロックは $$...$$）で記述してください。
 
 以下のJSONフォーマットで出力してください。
-{
-  "questions": [
-    {
-      "question": "問題文",
-      "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4", "選択肢5"],
-      "answer": 0,
-      "explanation": "解説"
-    }
-  ]
-}`;
+${AI_JSON_FORMAT}`;
 
     const payload = {
       contents: [{ parts: [{ text: prompt }] }],
@@ -2741,60 +2917,71 @@ ${refText}${getTrendPrompt(genre)}${askedPrompt}
       const response = await fetch(apiUrl, { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(payload) 
+        body: JSON.stringify(payload),
+        signal: job.controller.signal
       });
       
       const result = await response.json();
+      throwIfCancelled(job);
       
       if (!response.ok) {
         if ((response.status === 429 || response.status === 503) && !useLiteModel) {
             console.warn(`API制限または高負荷(${response.status})を検知。Liteモデルで再試行します...`);
-            return generateAIQuestionsBatch(true);
+            return await generateAIQuestionsBatch(true, job);
         }
         throw new Error(`[${response.status}] ${result.error?.message || "通信エラー"}`);
       }
 
-      if (result.candidates && result.candidates[0].content.parts[0].text) {
-        const textData = result.candidates[0].content.parts[0].text;
-        const data = JSON.parse(textData);
-        
-        if (!data.questions || data.questions.length === 0) throw new Error("データが空です");
-        
-        const startIndex = filteredQuestions.length;
-        data.questions.forEach((qData, idx) => {
-            filteredQuestions.push({
-              id: "AI-" + Date.now() + "-" + idx,
-              subject: currentSubject,
-              hasAnswer: true,
-              year: "AI生成予想",
-              qNum: `Q${idx+1}`,
-              genre: genre !== "all" ? genre : "AI総合",
-              subgenre: subgenre !== "all" ? subgenre : "網羅的",
-              topic: topic !== "all" ? topic : "",
-              question: qData.question,
-              options: qData.options,
-              answer: qData.answer,
-              explanation: `【AIによる解説】${useLiteModel ? ' (Liteモデル)' : ''}\n${qData.explanation}`,
-              imageUrl: "" 
-            });
-        });
+      const list = extractAiQuestionList(result.candidates?.[0]?.content?.parts?.[0]?.text);
+      // 形式が不正な問題（選択肢の数・正答が特定できない等）は除く
+      const valid = [];
+      list.forEach(raw => {
+        const r = normalizeAiQuestion(raw);
+        if (r.ok) valid.push(r);
+        else console.warn(`AIの問題を除外しました（${r.error}）`);
+      });
+      if (valid.length === 0) throw new AiNoUsable("AIが使える問題を作れませんでした。もう一度お試しください。");
 
-        document.getElementById('ai-loading').style.display = 'none';
-        document.getElementById('q-text').style.display = 'block';
-        document.getElementById('opt-box').style.display = 'flex';
-        document.getElementById('q-source').style.display = 'inline-flex';
-        
-        curIdx = startIndex;
-        renderQuestion();
-      }
+      const startIndex = filteredQuestions.length;
+      valid.forEach((qData, idx) => {
+          filteredQuestions.push({
+            id: "AI-" + Date.now() + "-" + idx,
+            subject: currentSubject,
+            hasAnswer: true,
+            year: "AI生成予想",
+            qNum: `Q${idx+1}`,
+            genre: genre !== "all" ? genre : "AI総合",
+            subgenre: subgenre !== "all" ? subgenre : "網羅的",
+            topic: topic !== "all" ? topic : "",
+            question: qData.question,
+            options: qData.options,
+            answer: qData.answer,
+            explanation: `【AIによる解説】${useLiteModel ? ' (Liteモデル)' : ''}\n${qData.explanation}`,
+            imageUrl: "" 
+          });
+      });
+
+      hideAiLoading();
+      document.getElementById('q-text').style.display = 'block';
+      document.getElementById('opt-box').style.display = 'flex';
+      document.getElementById('q-source').style.display = 'inline-flex';
+      
+      curIdx = startIndex;
+      renderQuestion();
     } catch(e) {
+      if (e instanceof AiCancelled || e.name === 'AbortError' || job.aborted) return;   // 「生成をやめる」で中止した場合は何もしない
       console.error("AI問題生成エラー", e);
       alert(`AI問題の生成に失敗しました。\n\n【詳細】\n${e.message}`);
-      window.goToStart();
+      if (filteredQuestions.length > 0) restorePracticeView();   // 続けている途中なら、直前の問題に戻る
+      else { hideAiLoading(); window.goToStart(); }
+    } finally {
+      if (ownJob) endAiJob(job);
     }
   }
 
   function renderQuestion() {
+    // 下のボタンの表記: AI網羅特訓だけ「終了して結果を見る」、他は「中断」（以前は一度AIを使うと他のモードにも残っていた）
+    document.getElementById('quit-btn').textContent = (isAiMode && !isMockMode) ? '終了して結果を見る' : '中断';
     if (isMockMode && mockState && (mockState.phase === 'exam' || mockState.phase === 'extra')) {
       renderMockExamQuestion();
       return;
