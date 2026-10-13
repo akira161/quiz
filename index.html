@@ -1720,6 +1720,7 @@
   }
   window.setAiEnabled = function(on) {
     if (!on && currentAiJob && !currentAiJob.aborted) { currentAiJob.cancel(); hideAiLoading(); }
+    if (!on) cancelPracticePrefetch();
     savePref('aiOff', !on);
     applyAiEnabled();
     showToast(on ? 'AI機能をオンにしました' : 'AI機能をオフにしました');
@@ -1756,6 +1757,7 @@
   });
 
   window.goToStart = function() {
+    cancelPracticePrefetch();
     if (currentAiJob && !currentAiJob.aborted) { currentAiJob.cancel(); hideAiLoading(); }
     stopMockTimer();
     window.isViewingPastMock = false;
@@ -2525,6 +2527,25 @@
     ]
   };
   const AI_BATCH_SIZE = 4;
+  const MOCK_CONCURRENCY = 4;   // 腕試し用のAI問題を同時に作る数
+
+  // Geminiの呼び出し。思考を浅くして速くする（対応していないモデルなら自動で外して再送する）
+  let geminiThinkingOk = true;
+  async function geminiPost(modelName, apiKey, payload, signal) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+    const send = async (think) => {
+      const body = JSON.parse(JSON.stringify(payload));
+      if (think) body.generationConfig = Object.assign({}, body.generationConfig, { thinkingConfig: { thinkingLevel: 'low' } });
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
+      return { res, data: await res.json() };
+    };
+    let r = await send(geminiThinkingOk);
+    if (!r.res.ok && r.res.status === 400 && geminiThinkingOk && /think/i.test(JSON.stringify(r.data && r.data.error || {}))) {
+      geminiThinkingOk = false;
+      r = await send(false);
+    }
+    return r;
+  }
 
   // AIに出力させるJSONの形（正答は「番号」と「正解の選択肢の文章」の両方を出させ、食い違いを検出できるようにする）
   const AI_JSON_FORMAT = `{"questions": [{"theme": "取り上げたテーマ名", "question": "問題文", "options": ["選択肢の文章1", "選択肢の文章2", "選択肢の文章3", "選択肢の文章4", "選択肢の文章5"], "correct_option": "正解の選択肢の文章（optionsの中のものと一字一句同じ）", "answer": 0, "explanation": "解説"}]}
@@ -2734,81 +2755,93 @@
       const examBigrams = [];            // この試験の問題の文章（似た問題の検出用）
       let examPrevText = "";             // この試験で作成済みの問題（AIに重複を避けさせる）
       let filled = 0;                    // AIが作れず、過去問で補った問題数
-      for (let gi = 0; gi < plan.length; gi++) {
-        const { genre, ai, past } = plan[gi];
-        const shortName = genre.replace('・建築物衛生管理', '');
-        const batches = Math.ceil(ai / AI_BATCH_SIZE);
-        const genreQuestions = [];
-        let missing = 0;
+      // 1) 全部の「作る単位（分野×最大4問）」を先に決め、テーマも先に割り当てる
+      const tasks = [];
+      plan.forEach((pl, gi) => {
+        const batches = Math.ceil(pl.ai / AI_BATCH_SIZE);
         for (let bi = 0; bi < batches; bi++) {
-          throwIfCancelled(job);
-          const count = Math.min(AI_BATCH_SIZE, ai - bi * AI_BATCH_SIZE);
-          updateProgress(`「${shortName}」を作成中 (${bi + 1}/${batches})...`, 0);
-          // 過去問のテーマを1問ずつ指定して作らせる（同じテーマ・よく出る話題ばかりになるのを防ぐ）
-          const seeds = pickThemeSeeds(genre, count, usedThemes);
-          let batch;
-          try {
-            batch = await fetchMockAIBatch(genre, count, apiKey, false, examPrevText, retryCallback, seeds, job);
-          } catch (e) {
-            if (!(e instanceof AiNoUsable)) throw e;   // 通信・認証などのエラーは、そのまま失敗として扱う
-            console.warn("使える問題が得られませんでした。作り直します:", e.message);
-            batch = [];
-          }
-
-          // 使えない問題を除いて足りなくなった分は、別のテーマで作り直す（最大2回まで）
-          for (let attempt = 0; batch.length < count && attempt < 2; attempt++) {
-            updateProgress("足りない問題を作り直し中...", 0);
-            try {
-              const need = count - batch.length;
-              const more = await fetchMockAIBatch(genre, need, apiKey, false, examPrevText, retryCallback, pickThemeSeeds(genre, need, usedThemes), job);
-              batch.push(...more);
-            } catch (e) {
-              if (e instanceof AiCancelled) throw e;
-              console.warn("足りない問題の作り直しに失敗しました:", e.message);
-              break;
-            }
-          }
-          missing += Math.max(0, count - batch.length);
-
-          // すでに作成した問題と似すぎているものは、別のテーマで作り直す（最大2回まで）
-          const findSimilar = () => {
-            const seenInBatch = [];
-            const idx = [];
-            batch.forEach((q, i) => {
-              const bg = bigramsOf(q.question + (q.options || []).join(''));
-              if (isSimilarToAny(bg, examBigrams) || isSimilarToAny(bg, seenInBatch)) idx.push(i);
-              seenInBatch.push(bg);
-            });
-            return idx;
-          };
-          for (let attempt = 0; attempt < 2; attempt++) {
-            const dupIdx = findSimilar();
-            if (dupIdx.length === 0) break;
-            updateProgress("似た問題を作り直し中...", 0);
-            try {
-              const reSeeds = pickThemeSeeds(genre, dupIdx.length, usedThemes);
-              const prev = examPrevText + batch.map(q => "・" + q.question.replace(/\s+/g, ' ').slice(0, 60)).join("\n") + "\n";
-              const redo = await fetchMockAIBatch(genre, dupIdx.length, apiKey, false, prev, retryCallback, reSeeds, job);
-              dupIdx.forEach((di, k) => { if (redo[k]) batch[di] = redo[k]; });
-            } catch (e) {
-              if (e instanceof AiCancelled) throw e;
-              console.warn("作り直しに失敗したため、そのまま使います:", e.message);
-              break;
-            }
-          }
-
-          batch.forEach(q => {
-            examBigrams.push(bigramsOf(q.question + (q.options || []).join('')));
-            examPrevText += "・" + q.question.replace(/\s+/g, ' ').slice(0, 60) + "\n";
-          });
-          genreQuestions.push(...batch);
-          updateProgress("インターバル待機中...", batch.length);
-          // APIの連続呼び出し制限を避けるための待機
-          if (bi < batches - 1 || gi < plan.length - 1) { await aiSleep(job, 1500); throwIfCancelled(job); }
+          const count = Math.min(AI_BATCH_SIZE, pl.ai - bi * AI_BATCH_SIZE);
+          tasks.push({ gi, genre: pl.genre, count, seeds: pickThemeSeeds(pl.genre, count, usedThemes), batch: [], missing: 0 });
         }
+      });
+
+      // 2) 同時に最大 MOCK_CONCURRENCY 件ずつ、並行してAIに作らせる
+      let failed = false, nextTask = 0, doneTasks = 0;
+      const runTask = async (t) => {
+        throwIfCancelled(job);
+        let batch;
+        try {
+          batch = await fetchMockAIBatch(t.genre, t.count, apiKey, false, "", retryCallback, t.seeds, job);
+        } catch (e) {
+          if (!(e instanceof AiNoUsable)) throw e;   // 通信・認証などのエラーは、そのまま失敗として扱う
+          console.warn("使える問題が得られませんでした。作り直します:", e.message);
+          batch = [];
+        }
+        // 使えない問題を除いて足りなくなった分は、別のテーマで作り直す（最大2回まで）
+        for (let attempt = 0; batch.length < t.count && attempt < 2 && !failed; attempt++) {
+          try {
+            const need = t.count - batch.length;
+            const more = await fetchMockAIBatch(t.genre, need, apiKey, false, "", retryCallback, pickThemeSeeds(t.genre, need, usedThemes), job);
+            batch.push(...more);
+          } catch (e) {
+            if (e instanceof AiCancelled) throw e;
+            console.warn("足りない問題の作り直しに失敗しました:", e.message);
+            break;
+          }
+        }
+        t.missing = Math.max(0, t.count - batch.length);
+        t.batch = batch;
+        doneTasks++;
+        if (!failed) updateProgress(`AIが問題を作成中 (${doneTasks}/${tasks.length}組 完了)...`, batch.length);
+      };
+      const worker = async () => {
+        while (!failed && nextTask < tasks.length) {
+          const t = tasks[nextTask++];
+          try { await runTask(t); } catch (e) { failed = true; throw e; }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(MOCK_CONCURRENCY, tasks.length) }, worker));
+
+      // 3) 分野ごとにまとめ、似すぎた問題を作り直し、足りない分は過去問で補う
+      for (let gi = 0; gi < plan.length; gi++) {
+        const { genre, past } = plan[gi];
+        const mine = tasks.filter(t => t.gi === gi);
+        const batch = mine.flatMap(t => t.batch);
+        const missing = mine.reduce((sum, t) => sum + t.missing, 0);
+
+        const findSimilar = () => {
+          const seenInBatch = [];
+          const idx = [];
+          batch.forEach((q, i) => {
+            const bg = bigramsOf(q.question + (q.options || []).join(''));
+            if (isSimilarToAny(bg, examBigrams) || isSimilarToAny(bg, seenInBatch)) idx.push(i);
+            seenInBatch.push(bg);
+          });
+          return idx;
+        };
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const dupIdx = findSimilar();
+          if (dupIdx.length === 0) break;
+          throwIfCancelled(job);
+          updateProgress("似た問題を作り直し中...", 0);
+          try {
+            const reSeeds = pickThemeSeeds(genre, dupIdx.length, usedThemes);
+            const prev = examPrevText + batch.map(q => "・" + q.question.replace(/\s+/g, ' ').slice(0, 60)).join("\n") + "\n";
+            const redo = await fetchMockAIBatch(genre, dupIdx.length, apiKey, false, prev, retryCallback, reSeeds, job);
+            dupIdx.forEach((di, k) => { if (redo[k]) batch[di] = redo[k]; });
+          } catch (e) {
+            if (e instanceof AiCancelled) throw e;
+            console.warn("作り直しに失敗したため、そのまま使います:", e.message);
+            break;
+          }
+        }
+        batch.forEach(q => {
+          examBigrams.push(bigramsOf(q.question + (q.options || []).join('')));
+          examPrevText += "・" + q.question.replace(/\s+/g, ' ').slice(0, 60) + "\n";
+        });
         // AIが作れなかった分は過去問で補う
         filled += missing;
-        genreQuestions.push(...pickPastForAI(genre, past + missing, usedThemes));
+        const genreQuestions = [...batch, ...pickPastForAI(genre, past + missing, usedThemes)];
         result.push(...shuffleArray(genreQuestions));
       }
       throwIfCancelled(job);
@@ -2851,8 +2884,7 @@ ${AI_JSON_FORMAT}
     while (retries >= 0) {
       try {
         throwIfCancelled(job);
-        const res = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: job ? job.controller.signal : undefined });
-        const data = await res.json();
+        const { res, data } = await geminiPost(modelName, apiKey, payload, job ? job.controller.signal : undefined);
         throwIfCancelled(job);
         
         if (!res.ok) {
@@ -3289,6 +3321,7 @@ ${AI_JSON_FORMAT}
       return;
     }
 
+    cancelPracticePrefetch();
     window.isViewingPastMock = false;
     isMockMode = false;
     isAiMode = true;
@@ -3306,35 +3339,31 @@ ${AI_JSON_FORMAT}
     clearSavedSession();
   }
 
-  async function generateAIQuestionsBatch(useLiteModel = false, job = null) {
-    const ownJob = !job;
-    job = job || startAiJob('practice');
-    document.getElementById('q-text').style.display = 'none';
-    document.getElementById('q-image-container').style.display = 'none';
-    document.getElementById('opt-box').style.display = 'none';
-    document.getElementById('q-source').style.display = 'none';
-    showAiLoading();
-    document.getElementById('ai-progress-container').style.display = 'none'; 
-    
-    const aiLoadingMsg = document.getElementById('ai-loading-msg');
-    if (useLiteModel) {
-      aiLoadingMsg.innerHTML = "標準モデルが混雑しているため、<br>軽量モデル(Lite)で予想問題を生成しています...";
-    } else {
-      aiLoadingMsg.innerHTML = "AIが過去問DBを分析し、<br>予想問題を5問生成しています...";
-    }
+  // --- 網羅特訓: 次の5問を先に作っておく（解いている間に裏で生成し、「次へ」で待たせない） ---
+  let practicePrefetch = null;   // { key, promise, controller }
+  function practiceKey() {
+    return [currentSubject, 'genre-filter', 'subgenre-filter', 'topic-filter'].map((x, i) => i === 0 ? x : document.getElementById(x).value).join('|');
+  }
+  window.cancelPracticePrefetch = function() {
+    if (practicePrefetch) { try { practicePrefetch.controller.abort(); } catch (e) {} practicePrefetch = null; }
+  };
+  function startPracticePrefetch() {
+    cancelPracticePrefetch();
+    if (!isAiMode || isAiOff() || !localStorage.getItem('my_gemini_api_key')) return;
+    const controller = new AbortController();
+    const entry = { key: practiceKey(), controller, promise: null };
+    entry.promise = requestPracticeAI(false, controller.signal).catch(e => { console.warn('先読みに失敗しました（次へ進むときに改めて作ります）:', e.message); return null; });
+    practicePrefetch = entry;
+  }
 
-    document.getElementById('exp-box').classList.remove('show');
-    document.getElementById('next-btn').disabled = true;
-    
+  // AIに予想問題5問を作らせて、使える問題だけを返す（画面は触らない）
+  async function requestPracticeAI(useLiteModel, signal) {
     const genre = document.getElementById('genre-filter').value;
     const subgenre = document.getElementById('subgenre-filter').value;
     const topic = document.getElementById('topic-filter').value;
 
     const apiKey = localStorage.getItem('my_gemini_api_key');
-    
     const modelName = useLiteModel ? 'gemini-3.5-flash-lite' : 'gemini-3.5-flash';
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-    
     const sj = SUBJECTS[currentSubject];
     let topicHint = `${sj.examName}の全般`;
     if (genre && genre !== "all") {
@@ -3382,39 +3411,64 @@ ${AI_JSON_FORMAT}`;
       }
     };
 
-    try {
-      const response = await fetch(apiUrl, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(payload),
-        signal: job.controller.signal
-      });
-      
-      const result = await response.json();
-      throwIfCancelled(job);
-      
-      if (!response.ok) {
-        if ((response.status === 429 || response.status === 503) && !useLiteModel) {
-            console.warn(`API制限または高負荷(${response.status})を検知。Liteモデルで再試行します...`);
-            return await generateAIQuestionsBatch(true, job);
-        }
-        throw new Error(`[${response.status}] ${result.error?.message || "通信エラー"}`);
+    const { res: response, data: result } = await geminiPost(modelName, apiKey, payload, signal);
+    if (!response.ok) {
+      if ((response.status === 429 || response.status === 503) && !useLiteModel) {
+        console.warn(`API制限または高負荷(${response.status})を検知。Liteモデルで再試行します...`);
+        return requestPracticeAI(true, signal);
       }
+      throw new Error(`[${response.status}] ${result.error?.message || "通信エラー"}`);
+    }
+    const list = extractAiQuestionList(result.candidates?.[0]?.content?.parts?.[0]?.text);
+    // 形式が不正な問題（選択肢の数・正答が特定できない等）は除く
+    const valid = [];
+    list.forEach(raw => {
+      const r = normalizeAiQuestion(raw);
+      if (r.ok) valid.push(r);
+      else console.warn(`AIの問題を除外しました（${r.error}）`);
+    });
+    if (valid.length === 0) throw new AiNoUsable("AIが使える問題を作れませんでした。もう一度お試しください。");
+    return { valid, lite: useLiteModel };
+  }
 
-      const list = extractAiQuestionList(result.candidates?.[0]?.content?.parts?.[0]?.text);
-      // 形式が不正な問題（選択肢の数・正答が特定できない等）は除く
-      const valid = [];
-      list.forEach(raw => {
-        const r = normalizeAiQuestion(raw);
-        if (r.ok) valid.push(r);
-        else console.warn(`AIの問題を除外しました（${r.error}）`);
-      });
-      if (valid.length === 0) throw new AiNoUsable("AIが使える問題を作れませんでした。もう一度お試しください。");
+  async function generateAIQuestionsBatch(useLiteModel = false, job = null) {
+    const ownJob = !job;
+    job = job || startAiJob('practice');
+    document.getElementById('q-text').style.display = 'none';
+    document.getElementById('q-image-container').style.display = 'none';
+    document.getElementById('opt-box').style.display = 'none';
+    document.getElementById('q-source').style.display = 'none';
+    showAiLoading();
+    document.getElementById('ai-progress-container').style.display = 'none'; 
+    document.getElementById('ai-loading-msg').innerHTML = "AIが過去問DBを分析し、<br>予想問題を5問生成しています...";
+    document.getElementById('exp-box').classList.remove('show');
+    document.getElementById('next-btn').disabled = true;
+
+    const genre = document.getElementById('genre-filter').value;
+    const subgenre = document.getElementById('subgenre-filter').value;
+    const topic = document.getElementById('topic-filter').value;
+
+    try {
+      // 先読みが済んでいる（または生成中の）ものがあれば、それを使う
+      let got = null;
+      const pre = practicePrefetch;
+      practicePrefetch = null;
+      if (pre && pre.key === practiceKey()) {
+        job.controller.signal.addEventListener('abort', () => { try { pre.controller.abort(); } catch (e) {} }, { once: true });
+        got = await pre.promise;
+        throwIfCancelled(job);
+      } else if (pre) {
+        try { pre.controller.abort(); } catch (e) {}
+      }
+      if (!got) got = await requestPracticeAI(useLiteModel, job.controller.signal);
+      throwIfCancelled(job);
+      const { valid, lite } = got;
 
       const startIndex = filteredQuestions.length;
+      const stamp = Date.now();
       valid.forEach((qData, idx) => {
           filteredQuestions.push({
-            id: "AI-" + Date.now() + "-" + idx,
+            id: "AI-" + stamp + "-" + idx,
             subject: currentSubject,
             hasAnswer: true,
             year: "AI生成予想",
@@ -3425,7 +3479,7 @@ ${AI_JSON_FORMAT}`;
             question: qData.question,
             options: qData.options,
             answer: qData.answer,
-            explanation: `【AIによる解説】${useLiteModel ? ' (Liteモデル)' : ''}\n${qData.explanation}`,
+            explanation: `【AIによる解説】${lite ? ' (Liteモデル)' : ''}\n${qData.explanation}`,
             imageUrl: "" 
           });
       });
@@ -3437,6 +3491,7 @@ ${AI_JSON_FORMAT}`;
       
       curIdx = startIndex;
       renderQuestion();
+      startPracticePrefetch();   // 解いている間に、次の5問を裏で作っておく
     } catch(e) {
       if (e instanceof AiCancelled || e.name === 'AbortError' || job.aborted) return;   // 「生成をやめる」で中止した場合は何もしない
       console.error("AI問題生成エラー", e);
@@ -3872,6 +3927,7 @@ ${answerText}`;
   };
 
   window.showResults = function() {
+    cancelPracticePrefetch();
     stopMockTimer();
     const analysisBox = document.getElementById('mock-analysis');
 
