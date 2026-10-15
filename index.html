@@ -411,6 +411,7 @@
   
   <div class="top-bar">
     <button class="nav-link-btn" onclick="openHelp()" title="使い方・API設定ガイド">❓ 使い方・設定</button>
+    <a href="guide.html" class="nav-link-btn" title="出題範囲の総まとめ・学習ロードマップ">📋 学習ガイド</a>
     <a href="viewer.html" class="nav-link-btn" title="まとめノートを閲覧">📚 まとめ閲覧</a>
     <button class="icon-btn" id="theme-btn" onclick="toggleTheme()" title="テーマ切替">🌙</button>
   </div>
@@ -1028,6 +1029,21 @@
     updateMemoryUI(); 
     loadApiKey();
     switchScreen('screen-start');
+    handleDeepLink();
+  }
+
+  // 学習ガイドからの「この論点を演習」: ?s=科目&c=大分類&g=小分類(細目)&issue=論点
+  async function handleDeepLink() {
+    const sp = new URLSearchParams(location.search);
+    const s = sp.get('s');
+    if (!s || !SUBJECTS[s]) return;
+    const c = sp.get('c'), g = sp.get('g'), issue = sp.get('issue');
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    try {
+      if (s !== currentSubject) { await activateSubject(s); updateMemoryUI(); }
+      const list = allQuestions.filter(q => (!c || q.genre === c) && (!g || q.trendKey === g) && (!issue || q.issue === issue));
+      if (list.length) startQuizWith(shuffleArray(list.slice()));
+    } catch (e) { console.warn('学習ガイドからの起動に失敗:', e); }
   }
 
   window.openHelp = function() {

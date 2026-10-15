@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>学習ガイド（出題範囲の総まとめ）</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#4338ca">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <style>
+    :root { --primary:#4338ca; --bg:#f8fafc; --card:#fff; --text:#0f172a; --muted:#64748b; --border:#e2e8f0; --ok:#15803d; --okbg:#dcfce7; --ng:#b91c1c; --ngbg:#fee2e2; --radius:12px; }
+    [data-theme="dark"] { --primary:#818cf8; --bg:#0f172a; --card:#1e293b; --text:#f1f5f9; --muted:#94a3b8; --border:#334155; --ok:#4ade80; --okbg:#14532d; --ng:#f87171; --ngbg:#7f1d1d; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 12px; display: flex; justify-content: center; }
+    .container { width: 100%; max-width: 820px; background: var(--card); padding: 20px 16px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+    .top-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .link-btn { border: 1px solid var(--primary); color: var(--primary); border-radius: 18px; padding: 8px 14px; font-weight: bold; font-size: .85rem; text-decoration: none; background: transparent; cursor: pointer; }
+    h1 { margin: 4px 0 4px; font-size: 1.4rem; color: var(--primary); }
+    h2 { font-size: 1.1rem; margin: 24px 0 8px; }
+    .lead { color: var(--muted); font-size: .85rem; line-height: 1.6; margin: 0 0 12px; }
+    .tabs { display: flex; gap: 6px; background: var(--bg); border: 1px solid var(--border); padding: 4px; border-radius: 10px; margin-bottom: 12px; }
+    .tab { flex: 1; border: 0; background: transparent; padding: 10px; border-radius: 8px; font-weight: bold; color: var(--muted); cursor: pointer; font-size: .95rem; }
+    .tab.active { background: var(--card); color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+    .stats div { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 2px; text-align: center; }
+    .stats span { display: block; font-size: .68rem; color: var(--muted); } .stats b { font-size: 1.1rem; color: var(--primary); }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .chip { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 999px; padding: 7px 12px; font-size: .8rem; font-weight: 600; cursor: pointer; }
+    .chip.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+    input[type=search] { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 16px; }
+    .rank { display: inline-block; min-width: 22px; text-align: center; border-radius: 6px; padding: 1px 6px; font-size: .72rem; font-weight: 800; color: #fff; }
+    .rank-S { background: #dc2626; } .rank-A { background: #ea580c; } .rank-B { background: #2563eb; } .rank-C { background: #64748b; }
+    .bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 6px 0 12px; } .bar i { display: block; height: 100%; background: var(--primary); width: 0; transition: width .3s; }
+    details { border: 1px solid var(--border); border-radius: 10px; margin: 8px 0; background: var(--card); }
+    details > summary { cursor: pointer; padding: 10px 12px; list-style: none; display: flex; gap: 8px; align-items: center; }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary::after { content: '▾'; margin-left: auto; color: var(--muted); }
+    details[open] > summary::after { transform: rotate(180deg); }
+    .sum-main { flex: 1; min-width: 0; } .sum-title { font-weight: 700; font-size: .95rem; line-height: 1.4; }
+    .sum-sub { font-size: .75rem; color: var(--muted); margin-top: 2px; }
+    .body { padding: 0 12px 12px; }
+    .genre > summary { background: var(--bg); border-radius: 10px; font-weight: 800; color: var(--primary); }
+    .road-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 4px; border-bottom: 1px solid var(--border); }
+    .road-item input { margin-top: 4px; width: 20px; height: 20px; flex-shrink: 0; }
+    .road-item.done .road-name { text-decoration: line-through; color: var(--muted); }
+    .road-name { font-weight: 700; font-size: .92rem; } .road-sub { font-size: .75rem; color: var(--muted); margin-top: 2px; line-height: 1.5; }
+    .issue { border-top: 1px dashed var(--border); padding: 10px 0; }
+    .issue-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+    .issue-name { font-weight: 700; font-size: .9rem; } .issue-meta { font-size: .72rem; color: var(--muted); }
+    .theme { font-size: .78rem; color: var(--muted); margin: 4px 0; line-height: 1.5; }
+    ul.stm { list-style: none; margin: 6px 0; padding: 0; }
+    ul.stm li { font-size: .85rem; line-height: 1.6; padding: 6px 8px 6px 10px; margin: 4px 0; border-left: 3px solid var(--ok); background: var(--okbg); border-radius: 0 6px 6px 0; }
+    ul.stm.ng li { border-left-color: var(--ng); background: var(--ngbg); }
+    ul.stm li small { color: var(--muted); display: block; font-size: .68rem; margin-top: 2px; }
+    .label { font-size: .75rem; font-weight: 800; margin-top: 8px; } .label.ok { color: var(--ok); } .label.ng { color: var(--ng); }
+    .acc { font-size: .72rem; font-weight: 700; padding: 1px 6px; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+    .sbtn { border: 1px solid var(--primary); color: var(--primary); background: transparent; border-radius: 8px; padding: 7px 10px; font-size: .78rem; font-weight: 700; text-decoration: none; cursor: pointer; }
+    .years { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+    .years span { font-size: .65rem; padding: 1px 5px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border); color: var(--muted); }
+    .years span.hit { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .note { font-size: .75rem; color: var(--muted); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; line-height: 1.6; margin: 12px 0; }
+    #loading { text-align: center; color: var(--muted); padding: 40px; }
+    mark { background: #fde68a; color: #000; border-radius: 2px; }
+    @media print { .top-bar, .tabs, .chips, input[type=search], .actions, .no-print { display: none !important; } details { break-inside: avoid; } body { padding: 0; } .container { box-shadow: none; } }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="top-bar">
+    <a class="link-btn" href="index.html">← 演習に戻る</a>
+    <a class="link-btn" href="viewer.html">📚 まとめノート</a>
+    <button class="link-btn" onclick="saveMarkdown()">⬇ Markdownで保存</button>
+    <button class="link-btn" onclick="window.print()">🖨 印刷</button>
+  </div>
+  <h1>📋 学習ガイド</h1>
+  <p class="lead">過去問（平成23年度〜令和7年度）の全問題を分析して、<b>何を・どの順番で勉強するか</b>をまとめました。出題回数と直近の出題状況から優先度を付け、論点ごとに過去問が正しいと認めた記述（＝押さえるべき知識）を一覧にしています。</p>
+  <div class="tabs" id="tabs"></div>
+  <div id="loading">読み込み中…</div>
+  <div id="main" style="display:none">
+    <div class="stats" id="stats"></div>
+
+    <h2>① 学習ロードマップ（優先順に学ぶ）</h2>
+    <p class="lead">直近の出題を重く見た得点の高い順です。<span class="rank rank-S">S</span> 最優先 / <span class="rank rank-A">A</span> 重要 / <span class="rank rank-B">B</span> 標準 / <span class="rank rank-C">C</span> 余裕があれば。学習し終えたらチェックを付けましょう。</p>
+    <div class="bar"><i id="road-bar"></i></div>
+    <div id="road-count" class="lead"></div>
+    <div class="chips" id="rank-chips"></div>
+    <div id="roadmap"></div>
+
+    <h2>② 論点別の総まとめ</h2>
+    <input type="search" id="q" placeholder="語句で検索（例: 冷凍機、著作権、浮動小数点）" oninput="renderAll()">
+    <div id="all"></div>
+
+    <div class="note">
+      ※「正しい記述」は、「最も不適切なものはどれか」「最も適切なものはどれか」型の過去問から、正答の判定にもとづいて機械的に取り出したものです。出題当時の内容のため、法令・基準・数値は<b>改正により現在と異なる場合があります</b>。計算問題・図表問題・組合せ問題は対象外なので、「🔁 この論点を演習」で実際に解いて確認してください。出典（年度・問題番号）を併記しています。
+    </div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let G = null, cur = 'senmon', rankFilter = 'all';
+let mem = {}, done = {};
+try { mem = JSON.parse(localStorage.getItem('app_memory') || '{}'); } catch (e) {}
+try { done = JSON.parse(localStorage.getItem('guide_done') || '{}'); } catch (e) {}
+if (mem.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const RANKNAME = { S: '最優先', A: '重要', B: '標準', C: '余裕があれば' };
+
+function hl(text, kw) {
+  const t = esc(text);
+  if (!kw) return t;
+  return t.split(esc(kw)).join('<mark>' + esc(kw) + '</mark>');
+}
+function accOf(ids) {
+  const h = mem.history || {};
+  let c = 0, w = 0;
+  ids.forEach(id => { if (h[id]) { c += h[id].c > 0 ? 1 : 0; w += h[id].w > 0 ? 1 : 0; } });
+  const answered = ids.filter(id => h[id] && (h[id].c || h[id].w)).length;
+  return answered ? { answered, ok: ids.filter(id => h[id] && h[id].c > 0 && !h[id].w).length, total: ids.length } : null;
+}
+function itemIds(it) { return it.issues.flatMap(x => x.ids); }
+function key(it) { return cur + '|' + it.genre + '|' + it.name; }
+function yearsHtml(years, all) {
+  const set = new Set(years);
+  return '<div class="years">' + all.map(y => `<span class="${set.has(y) ? 'hit' : ''}">${esc(y.replace('年度', '').replace('令和', 'R').replace('平成', 'H').replace('(本試験)', '').replace('(再試験)', '再'))}</span>`).join('') + '</div>';
+}
+const practiceUrl = (genre, g, issue) => `index.html?s=${cur}&c=${encodeURIComponent(genre)}` + (g ? `&g=${encodeURIComponent(g)}` : '') + (issue ? `&issue=${encodeURIComponent(issue)}` : '');
+
+function allItems() { return G.subjects[cur].genres.flatMap(g => g.items.map(it => ({ ...it, genre: g.name }))); }
+
+function renderTabs() {
+  $('tabs').innerHTML = Object.keys(G.subjects).map(k => `<button class="tab ${k === cur ? 'active' : ''}" onclick="setSubject('${k}')">${G.subjects[k].label}</button>`).join('');
+}
+function setSubject(k) { cur = k; rankFilter = 'all'; try { localStorage.setItem('guide_subject', k); } catch (e) {} renderAll(true); }
+
+function renderStats() {
+  const s = G.subjects[cur], items = allItems();
+  $('stats').innerHTML = `<div><span>問題数</span><b>${s.nQ}</b></div><div><span>年度数</span><b>${s.years.length}</b></div><div><span>分野</span><b>${s.genres.length}</b></div><div><span>論点</span><b>${items.reduce((t, i) => t + i.issues.length, 0)}</b></div>`;
+}
+function renderRoadmap() {
+  const items = allItems().sort((a, b) => a.order - b.order);
+  const doneN = items.filter(i => done[key(i)]).length;
+  $('road-bar').style.width = Math.round(doneN / items.length * 100) + '%';
+  $('road-count').textContent = `学習済み ${doneN} / ${items.length} 項目`;
+  $('rank-chips').innerHTML = ['all', 'S', 'A', 'B', 'C'].map(r => `<button class="chip ${rankFilter === r ? 'on' : ''}" onclick="setRank('${r}')">${r === 'all' ? 'すべて' : r + '：' + RANKNAME[r]}</button>`).join('');
+  $('roadmap').innerHTML = items.filter(i => rankFilter === 'all' || i.rank === rankFilter).map(it => {
+    const acc = accOf(itemIds(it));
+    const yo = G.subjects[cur].years; const recent = Object.entries(it.byYear).sort((a, b) => yo.indexOf(a[0]) - yo.indexOf(b[0])).slice(-5).map(([y, n]) => `${y.replace('年度', '').replace('令和', 'R').replace('平成', 'H')}×${n}`).join(' ');
+    return `<div class="road-item ${done[key(it)] ? 'done' : ''}">
+      <input type="checkbox" ${done[key(it)] ? 'checked' : ''} data-k="${esc(key(it))}" onchange="toggleDone(this.dataset.k, this.checked)" aria-label="学習済み">
+      <div style="flex:1;min-width:0"><div class="road-name"><span class="rank rank-${it.rank}">${it.rank}</span> ${it.order}. ${esc(it.name)}</div>
+        <div class="road-sub">${esc(it.genre)} ／ 過去${it.n}問 ／ 論点${it.issues.length}件${acc ? ` ／ <span class="acc">あなたの正答 ${acc.ok}/${acc.answered}問</span>` : ''}<br>${esc(recent)}</div></div>
+      <a class="sbtn" href="${practiceUrl(it.genre, it.name)}">演習</a></div>`;
+  }).join('');
+}
+function setRank(r) { rankFilter = r; renderRoadmap(); }
+function toggleDone(k, v) { if (v) done[k] = 1; else delete done[k]; try { localStorage.setItem('guide_done', JSON.stringify(done)); } catch (e) {} renderRoadmap(); }
+
+function issueHtml(x, kw, years, genre, grp) {
+  const acc = accOf(x.ids);
+  return `<div class="issue">
+    <div class="issue-head"><span class="issue-name">${hl(x.name, kw)}</span><span class="issue-meta">${x.n}回出題</span>${acc ? `<span class="acc">正答 ${acc.ok}/${acc.answered}</span>` : ''}</div>
+    ${yearsHtml(x.years, years)}
+    ${x.themes.length ? `<div class="theme">出題内容: ${x.themes.map(t => hl(t, kw)).join(' ／ ')}</div>` : ''}
+    ${x.ok.length ? `<div class="label ok">✅ 押さえる内容（過去問で正しいとされた記述）</div><ul class="stm">${x.ok.map(s => `<li>${hl(s.t, kw)}<small>${esc(s.y)} ${esc(s.q)}</small></li>`).join('')}</ul>` : ''}
+    ${x.ng.length ? `<details><summary><span class="sum-sub">❌ 誤りとされた記述の例（ひっかけ）を見る</span></summary><div class="body"><ul class="stm ng">${x.ng.map(s => `<li>${hl(s.t, kw)}<small>${esc(s.y)} ${esc(s.q)}（誤り）</small></li>`).join('')}</ul></div></details>` : ''}
+    <div class="actions"><a class="sbtn" href="${practiceUrl(genre, grp, x.name)}">🔁 この論点を演習（${x.n}問）</a></div></div>`;
+}
+function renderAll() {
+  const kw = $('q').value.trim();
+  const years = G.subjects[cur].years;
+  const out = G.subjects[cur].genres.map(g => {
+    const its = g.items.map(it => {
+      let issues = it.issues;
+      if (kw) issues = issues.filter(x => (x.name + it.name + x.themes.join('') + x.ok.map(s => s.t).join('') + x.ng.map(s => s.t).join('')).includes(kw));
+      return { it, issues };
+    }).filter(o => o.issues.length);
+    if (!its.length) return '';
+    return `<details class="genre" ${kw ? 'open' : ''}><summary><div class="sum-main"><div class="sum-title">${esc(g.name)}</div><div class="sum-sub">過去${g.n}問 ／ ${its.length}グループ</div></div></summary><div class="body">` +
+      its.map(({ it, issues }) => `<details ${kw ? 'open' : ''}><summary><span class="rank rank-${it.rank}">${it.rank}</span><div class="sum-main"><div class="sum-title">${esc(it.name)}</div><div class="sum-sub">過去${it.n}問 ／ 論点${it.issues.length}件</div></div></summary><div class="body">${issues.map(x => issueHtml(x, kw, years, g.name, it.name)).join('')}<div class="actions"><a class="sbtn" href="${practiceUrl(g.name, it.name)}">🔁 「${esc(it.name)}」全体を演習</a></div></div></details>`).join('') + '</div></details>';
+  }).join('');
+  $('all').innerHTML = out || '<p class="lead">該当する論点がありません。</p>';
+  renderTabs(); renderStats(); renderRoadmap();
+}
+
+function saveMarkdown() {
+  const s = G.subjects[cur];
+  let md = `# ${s.label}科目 学習ガイド\n\n過去問 ${s.nQ} 問（${s.years[0]}〜${s.years.at(-1)}）の分析にもとづく総まとめ。法令・数値は改正により現在と異なる場合があります。\n\n`;
+  md += '## 学習ロードマップ（優先順）\n\n' + allItems().sort((a, b) => a.order - b.order).map(i => `- [ ] ${i.order}. [${i.rank}] ${i.name}（${i.genre}／過去${i.n}問）`).join('\n') + '\n\n';
+  s.genres.forEach(g => {
+    md += `## ${g.name}\n\n`;
+    g.items.forEach(it => {
+      md += `### ${it.name}（優先度${it.rank}・過去${it.n}問）\n\n`;
+      it.issues.forEach(x => {
+        md += `#### ${x.name}（${x.n}回出題）\n\n`;
+        if (x.themes.length) md += `出題内容: ${x.themes.join(' ／ ')}\n\n`;
+        x.ok.forEach(t => { md += `- ✅ ${t.t}（${t.y} ${t.q}）\n`; });
+        x.ng.forEach(t => { md += `- ❌ 誤り: ${t.t}（${t.y} ${t.q}）\n`; });
+        md += '\n';
+      });
+    });
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([md], { type: 'text/markdown' }));
+  a.download = `学習ガイド_${s.label}.md`;
+  a.click();
+}
+
+(async () => {
+  try {
+    const res = await fetch('guide.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    G = await res.json();
+    let saved = null; try { saved = localStorage.getItem('guide_subject'); } catch (e) {}
+    cur = (G.subjects[saved] && saved) || (G.subjects[mem.subject] && mem.subject) || 'senmon';
+    $('loading').style.display = 'none'; $('main').style.display = 'block';
+    renderAll();
+  } catch (e) {
+    $('loading').textContent = '読み込みに失敗しました: ' + e.message;
+  }
+})();
+</script>
+</body>
+</html>

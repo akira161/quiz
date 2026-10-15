@@ -2,6 +2,8 @@
 "./",
 "index.html",
 "viewer.html",
+"guide.json",
+"guide.html",
 "manifest.webmanifest",
 "matome.xlsx",
 "data/senmon.xlsx",

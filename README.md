@@ -21,3 +21,8 @@ python3 tools/build_db.py --senmon 専門.xlsx --kiso 基礎.xlsx --tekisei 適�
 - 専門科目は、従来の分類（3ブロック・サブジャンル・細目）と、まとめノートの過去問参照IDを `tools/senmon_legacy.json` から引き継ぎます。
 - 作り直したら `sw.js` の `CACHE_NAME` の番号を上げてください（端末に保存された古い画像を入れ替えるため）。
 - 必要なもの: Python 3（openpyxl, pillow, numpy）
+
+
+## 学習ガイド（guide.html）
+
+過去問DBから論点ごとの出題回数・優先度・「正しい記述」をまとめたページ。データを作り直したら `python3 tools/build_guide.py` で `guide.json` を作り直し、`sw.js` の `CACHE_NAME` を上げる。
