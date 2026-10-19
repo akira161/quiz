@@ -2219,6 +2219,15 @@
 
   // 解答後の「まとめノート」ボタン（関連ノートの件数を表示。未読込なら読み込み後に更新）
   function updateNoteButton(btn, q) {
+    // 基礎・適性は、その分野（小分類）のまとめノートを新しいタブで開く
+    const subj = (q && q.subject) || 'senmon';
+    if (subj !== 'senmon' && SUBJECTS[subj] && q.trendKey && !isAiQuestion(q)) {
+      btn.style.display = 'block';
+      btn.textContent = `📚 まとめノートで「${q.trendKey}」を見る`;
+      btn.onclick = () => window.open(`viewer.html?subject=${subj}&c=${encodeURIComponent(q.genre)}&q=${encodeURIComponent(q.trendKey)}`, '_blank');
+      return;
+    }
+    btn.onclick = () => openNoteModal();
     const apply = () => {
       const n = getRelatedNotes(q).length;
       btn.style.display = n > 0 ? 'block' : 'none';

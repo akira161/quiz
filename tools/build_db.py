@@ -175,7 +175,7 @@ def main():
         print(f'{key}: {len(rows)}問 / 正答補完 {filled}問 / 図表あり {n_fig}問 / 画像 {total / 1e6:.1f}MB')
 
     precache = sorted(precache)
-    base = ['./', 'index.html', 'viewer.html', 'guide.html', 'guide.json', 'manifest.webmanifest', 'matome.xlsx',
+    base = ['./', 'index.html', 'viewer.html', 'guide.html', 'guide.json', 'manifest.webmanifest', 'matome.xlsx', 'matome_kiso.xlsx', 'matome_tekisei.xlsx',
             'data/senmon.xlsx', 'data/kiso.xlsx', 'data/tekisei.xlsx',
             'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png']
     json.dump(base + precache, open(os.path.join(ROOT, 'precache.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=0)

@@ -70,7 +70,7 @@
 <div class="container">
   <div class="top-bar">
     <a class="link-btn" href="index.html">← 演習に戻る</a>
-    <a class="link-btn" href="viewer.html">📚 まとめノート</a>
+    <a class="link-btn" id="notes-link" href="viewer.html">📚 まとめノート</a>
     <button class="link-btn" onclick="saveMarkdown()">⬇ Markdownで保存</button>
     <button class="link-btn" onclick="window.print()">🖨 印刷</button>
   </div>
@@ -125,11 +125,13 @@ function yearsHtml(years, all) {
   const set = new Set(years);
   return '<div class="years">' + all.map(y => `<span class="${set.has(y) ? 'hit' : ''}">${esc(y.replace('年度', '').replace('令和', 'R').replace('平成', 'H').replace('(本試験)', '').replace('(再試験)', '再'))}</span>`).join('') + '</div>';
 }
+const noteUrl = (genre, g) => `viewer.html?subject=${cur}&c=${encodeURIComponent(genre)}&q=${encodeURIComponent(g)}`;
 const practiceUrl = (genre, g, issue) => `index.html?s=${cur}&c=${encodeURIComponent(genre)}` + (g ? `&g=${encodeURIComponent(g)}` : '') + (issue ? `&issue=${encodeURIComponent(issue)}` : '');
 
 function allItems() { return G.subjects[cur].genres.flatMap(g => g.items.map(it => ({ ...it, genre: g.name }))); }
 
 function renderTabs() {
+  const nl = $('notes-link'); if (nl) nl.href = 'viewer.html?subject=' + cur;
   $('tabs').innerHTML = Object.keys(G.subjects).map(k => `<button class="tab ${k === cur ? 'active' : ''}" onclick="setSubject('${k}')">${G.subjects[k].label}</button>`).join('');
 }
 function setSubject(k) { cur = k; rankFilter = 'all'; try { localStorage.setItem('guide_subject', k); } catch (e) {} renderAll(true); }
@@ -151,7 +153,7 @@ function renderRoadmap() {
       <input type="checkbox" ${done[key(it)] ? 'checked' : ''} data-k="${esc(key(it))}" onchange="toggleDone(this.dataset.k, this.checked)" aria-label="学習済み">
       <div style="flex:1;min-width:0"><div class="road-name"><span class="rank rank-${it.rank}">${it.rank}</span> ${it.order}. ${esc(it.name)}</div>
         <div class="road-sub">${esc(it.genre)} ／ 過去${it.n}問 ／ 論点${it.issues.length}件${acc ? ` ／ <span class="acc">あなたの正答 ${acc.ok}/${acc.answered}問</span>` : ''}<br>${esc(recent)}</div></div>
-      <a class="sbtn" href="${practiceUrl(it.genre, it.name)}">演習</a></div>`;
+      <div style="display:flex;flex-direction:column;gap:4px"><a class="sbtn" href="${practiceUrl(it.genre, it.name)}">演習</a>${cur !== 'senmon' ? `<a class="sbtn" href="${noteUrl(it.genre, it.name)}">ノート</a>` : ''}</div></div>`;
   }).join('');
 }
 function setRank(r) { rankFilter = r; renderRoadmap(); }
@@ -178,7 +180,7 @@ function renderAll() {
     }).filter(o => o.issues.length);
     if (!its.length) return '';
     return `<details class="genre" ${kw ? 'open' : ''}><summary><div class="sum-main"><div class="sum-title">${esc(g.name)}</div><div class="sum-sub">過去${g.n}問 ／ ${its.length}グループ</div></div></summary><div class="body">` +
-      its.map(({ it, issues }) => `<details ${kw ? 'open' : ''}><summary><span class="rank rank-${it.rank}">${it.rank}</span><div class="sum-main"><div class="sum-title">${esc(it.name)}</div><div class="sum-sub">過去${it.n}問 ／ 論点${it.issues.length}件</div></div></summary><div class="body">${issues.map(x => issueHtml(x, kw, years, g.name, it.name)).join('')}<div class="actions"><a class="sbtn" href="${practiceUrl(g.name, it.name)}">🔁 「${esc(it.name)}」全体を演習</a></div></div></details>`).join('') + '</div></details>';
+      its.map(({ it, issues }) => `<details ${kw ? 'open' : ''}><summary><span class="rank rank-${it.rank}">${it.rank}</span><div class="sum-main"><div class="sum-title">${esc(it.name)}</div><div class="sum-sub">過去${it.n}問 ／ 論点${it.issues.length}件</div></div></summary><div class="body">${issues.map(x => issueHtml(x, kw, years, g.name, it.name)).join('')}<div class="actions"><a class="sbtn" href="${practiceUrl(g.name, it.name)}">🔁 「${esc(it.name)}」全体を演習</a>${cur !== 'senmon' ? `<a class="sbtn" href="${noteUrl(g.name, it.name)}">📚 まとめノート</a>` : ''}</div></div></details>`).join('') + '</div></details>';
   }).join('');
   $('all').innerHTML = out || '<p class="lead">該当する論点がありません。</p>';
   renderTabs(); renderStats(); renderRoadmap();

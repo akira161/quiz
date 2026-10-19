@@ -26,3 +26,7 @@ python3 tools/build_db.py --senmon 専門.xlsx --kiso 基礎.xlsx --tekisei 適�
 ## 学習ガイド（guide.html）
 
 過去問DBから論点ごとの出題回数・優先度・「正しい記述」をまとめたページ。データを作り直したら `python3 tools/build_guide.py` で `guide.json` を作り直し、`sw.js` の `CACHE_NAME` を上げる。
+
+## 基礎・適性のまとめノート（matome_kiso.xlsx / matome_tekisei.xlsx）
+
+内容は `tools/matome_kiso_content.py`・`tools/matome_tekisei_content.py` に書いてある。`python3 tools/build_guide.py && python3 tools/build_matome.py` でExcelを作り直す（過去問の論点グループとノートの項目が1対1に対応していないとエラーで止まる）。閲覧は `viewer.html?subject=kiso`（または tekisei）。

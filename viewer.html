@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>衛生工学 まとめノート</title>
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#4338ca">
@@ -160,7 +160,12 @@
     <a href="index.html" class="nav-link-btn">← 過去問演習に戻る</a>
   </div>
 
-  <h1>📚 衛生工学 まとめノート</h1>
+  <h1 id="page-title">📚 衛生工学 まとめノート</h1>
+  <div id="subject-switch" class="sheet-tabs" style="margin-bottom: 12px;">
+    <a class="sheet-tab" data-key="senmon" href="viewer.html?subject=senmon" style="text-decoration:none;">専門</a>
+    <a class="sheet-tab" data-key="kiso" href="viewer.html?subject=kiso" style="text-decoration:none;">基礎</a>
+    <a class="sheet-tab" data-key="tekisei" href="viewer.html?subject=tekisei" style="text-decoration:none;">適性</a>
+  </div>
 
   <div id="loading">
     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spinner"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
@@ -170,7 +175,7 @@
   <div id="upload-content" style="display: none; text-align: left; padding: 20px;">
       <div style="font-size: 0.95rem; color: #b91c1c; background: #fee2e2; padding: 16px; border-radius: 8px; border: 1px solid #fca5a5; margin-bottom: 20px; line-height: 1.5;">
           <b>自動読み込みに失敗しました。</b><br>
-          以下のボタンから直接「<b>matome.xlsx</b>」ファイルを選択して読み込んでください。
+          以下のボタンから直接まとめノートのExcelファイル（<b id="upload-name">matome.xlsx</b>）を選択して読み込んでください。
       </div>
       <input type="file" id="excel-file-input" accept=".xlsx, .xls" style="font-size: 1rem; width: 100%; padding: 12px; background: var(--bg); border: 1px dashed var(--border); border-radius: 8px;" onchange="handleManualUpload(event)">
   </div>
@@ -227,8 +232,15 @@
     });
   }
 
-  const EXCEL_FILE = "matome.xlsx";
-  const EXCEL_DB_FILE = "data/senmon.xlsx"; // 専門科目の過去問DBも参照（関連過去問の検索用）
+  // 科目: ?subject=senmon（既定）/ kiso / tekisei
+  const SUBJECT = (() => { const k = new URLSearchParams(location.search).get('subject'); return ['kiso', 'tekisei'].includes(k) ? k : 'senmon'; })();
+  const SUBJECT_INFO = {
+    senmon: { title: '📚 衛生工学 まとめノート', note: 'matome.xlsx', db: 'data/senmon.xlsx' },
+    kiso: { title: '📚 基礎科目 まとめノート', note: 'matome_kiso.xlsx', db: 'data/kiso.xlsx' },
+    tekisei: { title: '📚 適性科目 まとめノート', note: 'matome_tekisei.xlsx', db: 'data/tekisei.xlsx' }
+  };
+  const EXCEL_FILE = SUBJECT_INFO[SUBJECT].note;
+  const EXCEL_DB_FILE = SUBJECT_INFO[SUBJECT].db; // 同じ科目の過去問DBも参照（関連過去問の検索用）
   let sheetDataMap = {}; 
   let currentSheetName = "";
   let currentGenres = new Set();
@@ -246,6 +258,10 @@
   }
 
   window.onload = async () => {
+    document.getElementById('page-title').textContent = SUBJECT_INFO[SUBJECT].title;
+    document.title = SUBJECT_INFO[SUBJECT].title.replace('📚 ', '');
+    const un = document.getElementById('upload-name'); if (un) un.textContent = EXCEL_FILE;
+    document.querySelectorAll('#subject-switch .sheet-tab').forEach(a => a.classList.toggle('active', a.dataset.key === SUBJECT));
     
     // 追加: 過去問DBの非同期読み込み (まとめノートを読みながら裏で準備)
     fetch(EXCEL_DB_FILE, { cache: 'no-cache' }).then(res => {
@@ -269,9 +285,10 @@
                 return {
                     year: yearLabel(row['出典']),
                     qNum: String(row['問題番号'] || `Q${i+1}`).trim(),
-                    genre: String(row['ブロック'] || '').trim(),
-                    subgenre: String(row['旧サブジャンル'] || '').trim(),
-                    topic: String(row['細目'] || '').trim(),
+                    // 専門は従来の分類（ブロック・サブジャンル・細目）、基礎・適性は大分類・小分類・Issue
+                    genre: String(row['ブロック'] || row['大分類'] || '').trim(),
+                    subgenre: String(row['旧サブジャンル'] || row['小分類'] || '').trim(),
+                    topic: String(row['細目'] || row['Issue'] || '').trim(),
                     question: String(row['問題文'] || '').trim(),
                     theme: [row['テーマ概要'], row['Issue']].map(v => String(v || '').trim()).filter(Boolean).join(' '),
                     options: options,
@@ -370,8 +387,21 @@
       const params = new URLSearchParams(location.search);
       const wantSheet = params.get('sheet');
       const wantQuery = params.get('q');
-      initUI(wantSheet && sheetDataMap[wantSheet] ? wantSheet : firstValidSheet);
+      // シート指定がなく項目名（q）だけのときは、その項目があるシートを探して開く（学習ガイド・演習画面から）
+      let startSheet = wantSheet && sheetDataMap[wantSheet] ? wantSheet : firstValidSheet;
+      const wantGenre = params.get('c');
+      if (wantQuery && !(wantSheet && sheetDataMap[wantSheet])) {
+          const found = Object.keys(sheetDataMap).find(sn => {
+              const hs = sheetHeaders[sn] || [];
+              const tk = hs.find(k => k.includes('項目'));
+              const gk = hs.find(k => k.includes('分野'));
+              return tk && sheetDataMap[sn].some(r => r[tk] === wantQuery && (!wantGenre || !gk || r[gk] === wantGenre));
+          });
+          if (found) startSheet = found;
+      }
+      initUI(startSheet);
       if (wantQuery) {
+          if (wantGenre && currentGenres.has(wantGenre)) document.getElementById('genre-filter').value = wantGenre;
           document.getElementById('keyword-filter').value = wantQuery;
           renderNotes();
       }
@@ -450,6 +480,8 @@
               });
 
               if (genre && (q.subgenre === genre || q.topic === genre)) score += 5;
+              // 基礎・適性: ノートの「項目」が過去問の小分類（先頭）と一致するものを優先
+              if (SUBJECT !== 'senmon' && title && q.subgenre.split(/[、,，]/)[0].trim() === title.trim()) score += 8;
               if (genre && q.genre === genre) score += 3;
               
               return { q, score };
@@ -500,7 +532,7 @@
   function switchSheet(sheetName) {
       currentSheetName = sheetName;
       
-      document.querySelectorAll('.sheet-tab').forEach(tab => {
+      document.querySelectorAll('#sheet-tabs .sheet-tab').forEach(tab => {
           tab.classList.remove('active');
           if (tab.textContent === sheetName.replace(/^[①-⑨0-9]+_/, '')) {
               tab.classList.add('active');
@@ -597,7 +629,7 @@
                   tableHtml += `
                       <tr>
                           <th style="width: 35%;">${k}</th>
-                          <td>${cellValue}</td>
+                          <td>${escapeHtml(cellValue)}</td>
                       </tr>
                   `;
               }
