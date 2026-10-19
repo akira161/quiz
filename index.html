@@ -2595,7 +2595,7 @@
     ]
   };
   const AI_BATCH_SIZE = 4;
-  const MOCK_CONCURRENCY = 4;   // 腕試し用のAI問題を同時に作る数
+  const MOCK_CONCURRENCY = 3;   // 腕試し用のAI問題を同時に作る数
 
   // Geminiの呼び出し。思考を浅くして速くする（対応していないモデルなら自動で外して再送する）
   let geminiThinkingOk = true;
@@ -2626,6 +2626,8 @@
   class AiCancelled extends Error { constructor() { super('cancelled'); this.name = 'AiCancelled'; } }
   // AIが答えたが、使える問題が1つもなかった（通信や認証のエラーとは区別する）
   class AiNoUsable extends Error { constructor(msg) { super(msg); this.name = 'AiNoUsable'; } }
+  // APIが混雑・利用制限（429/503）で、待っても応答が得られなかった
+  class AiBusy extends Error { constructor(msg) { super(msg); this.name = 'AiBusy'; } }
   let currentAiJob = null;
 
   function startAiJob(kind) {
@@ -2836,41 +2838,56 @@
       });
 
       // 2) 同時に最大 MOCK_CONCURRENCY 件ずつ、並行してAIに作らせる
-      let failed = false, nextTask = 0, doneTasks = 0;
+      let failed = false, nextTask = 0, doneTasks = 0, active = 0, limit = MOCK_CONCURRENCY, gotAny = false, lastBusy = null;
       const runTask = async (t) => {
         throwIfCancelled(job);
         let batch;
+        let busy = false;
         try {
           batch = await fetchMockAIBatch(t.genre, t.count, apiKey, false, "", retryCallback, t.seeds, job);
         } catch (e) {
-          if (!(e instanceof AiNoUsable)) throw e;   // 通信・認証などのエラーは、そのまま失敗として扱う
-          console.warn("使える問題が得られませんでした。作り直します:", e.message);
-          batch = [];
+          if (e instanceof AiBusy) {
+            // 待っても混雑が続く場合: 同時生成をやめて1件ずつにし、この分は後で過去問で補う（ここまでに作った問題は捨てない）
+            busy = true; lastBusy = e; limit = 1; job.maxBusy = 1;   // 以降は待つ回数を減らす
+            console.warn("APIの混雑で作れませんでした。過去問で補います:", e.message);
+            batch = [];
+          } else if (e instanceof AiNoUsable) {
+            console.warn("使える問題が得られませんでした。作り直します:", e.message);
+            batch = [];
+          } else {
+            throw e;   // 通信・認証などのエラーは、そのまま失敗として扱う
+          }
         }
         // 使えない問題を除いて足りなくなった分は、別のテーマで作り直す（最大2回まで）
-        for (let attempt = 0; batch.length < t.count && attempt < 2 && !failed; attempt++) {
+        for (let attempt = 0; batch.length < t.count && attempt < 2 && !failed && !busy; attempt++) {
           try {
             const need = t.count - batch.length;
             const more = await fetchMockAIBatch(t.genre, need, apiKey, false, "", retryCallback, pickThemeSeeds(t.genre, need, usedThemes), job);
             batch.push(...more);
           } catch (e) {
             if (e instanceof AiCancelled) throw e;
+            if (e instanceof AiBusy) { lastBusy = e; limit = 1; job.maxBusy = 1; }
             console.warn("足りない問題の作り直しに失敗しました:", e.message);
             break;
           }
         }
         t.missing = Math.max(0, t.count - batch.length);
         t.batch = batch;
+        if (batch.length > 0) gotAny = true;
         doneTasks++;
         if (!failed) updateProgress(`AIが問題を作成中 (${doneTasks}/${tasks.length}組 完了)...`, batch.length);
       };
       const worker = async () => {
         while (!failed && nextTask < tasks.length) {
+          if (active >= limit) { await aiSleep(job, 400); throwIfCancelled(job); continue; }   // 混雑したら同時数を絞る
           const t = tasks[nextTask++];
-          try { await runTask(t); } catch (e) { failed = true; throw e; }
+          active++;
+          try { await runTask(t); } catch (e) { failed = true; throw e; } finally { active--; }
         }
       };
       await Promise.all(Array.from({ length: Math.min(MOCK_CONCURRENCY, tasks.length) }, worker));
+      // 1問もAIが作れなかったときだけ、失敗として知らせる（一部でも作れていれば、残りは過去問で補う）
+      if (!gotAny && lastBusy && totalAiNeed > 0) throw lastBusy;
 
       // 3) 分野ごとにまとめ、似すぎた問題を作り直し、足りない分は過去問で補う
       for (let gi = 0; gi < plan.length; gi++) {
@@ -2951,6 +2968,7 @@ ${AI_JSON_FORMAT}
     const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { response_mime_type: "application/json" } };
     
     let retries = 2;
+    let busyTries = 0;
     while (retries >= 0) {
       try {
         throwIfCancelled(job);
@@ -2964,7 +2982,7 @@ ${AI_JSON_FORMAT}
                    if (onRetry) onRetry(retries, true);
                    return fetchMockAIBatch(genre, count, apiKey, true, previousQuestionsText, onRetry, seeds, job); 
                }
-               throw new Error(`API Busy (${res.status}) - Lite model also failed.`);
+               throw new AiBusy(`APIが混雑しています（${res.status}）`);
            }
            throw new Error(data.error?.message || "Unknown API Error");
         }
@@ -2996,6 +3014,14 @@ ${AI_JSON_FORMAT}
         }));
       } catch (e) {
         if (e instanceof AiCancelled || e.name === 'AbortError' || (job && job.aborted)) throw new AiCancelled();
+        if (e instanceof AiBusy) {
+          // 混雑・利用制限のときは、間隔をあけながら待って再試行する（5秒→10秒→20秒）
+          if (++busyTries > (job && job.maxBusy != null ? job.maxBusy : 3)) throw e;
+          if (onRetry) onRetry(retries, useLiteModel);
+          await aiSleep(job, Math.min(30000, 5000 * Math.pow(2, busyTries - 1)) + Math.random() * 1500);
+          throwIfCancelled(job);
+          continue;
+        }
         console.warn(`Fetch failed for ${genre} (${count} questions), retries left: ${retries}. Error: ${e.message}`);
         retries--;
         if (retries < 0) throw e;
@@ -3427,7 +3453,7 @@ ${AI_JSON_FORMAT}
   }
 
   // AIに予想問題5問を作らせて、使える問題だけを返す（画面は触らない）
-  async function requestPracticeAI(useLiteModel, signal) {
+  async function requestPracticeAI(useLiteModel, signal, attempt = 0) {
     const genre = document.getElementById('genre-filter').value;
     const subgenre = document.getElementById('subgenre-filter').value;
     const topic = document.getElementById('topic-filter').value;
@@ -3485,7 +3511,13 @@ ${AI_JSON_FORMAT}`;
     if (!response.ok) {
       if ((response.status === 429 || response.status === 503) && !useLiteModel) {
         console.warn(`API制限または高負荷(${response.status})を検知。Liteモデルで再試行します...`);
-        return requestPracticeAI(true, signal);
+        return requestPracticeAI(true, signal, attempt);
+      }
+      if ((response.status === 429 || response.status === 503) && attempt < 2) {
+        // 混雑・利用制限: 少し待ってからもう一度（6秒→12秒）
+        await new Promise(resolve => { const tm = setTimeout(resolve, 6000 * (attempt + 1)); if (signal) signal.addEventListener('abort', () => { clearTimeout(tm); resolve(); }, { once: true }); });
+        if (signal && signal.aborted) throw new AiCancelled();
+        return requestPracticeAI(true, signal, attempt + 1);
       }
       throw new Error(`[${response.status}] ${result.error?.message || "通信エラー"}`);
     }
