@@ -975,14 +975,66 @@
   }
 
   // DB由来の問題は記号（< > * _ | など）をそのまま表示するため、Markdownに変換しない。AI生成の問題はMarkdown/LaTeXで表示する
+
+  // --- 数式の表示（AIが返す問題・解説に含まれるLaTeX） ---
+  // 「$...$」で囲まれていない生のLaTeX（\text{35.4 %} など）を、$...$ で囲んで数式として表示できるようにする
+  const MATH_SRC = String.raw`\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$`;
+  const BARE_LATEX_RE = new RegExp(String.raw`[^　-鿿＀-￯\n*#$]*(?:\\[a-zA-Z]+|[\^_]\{)[^　-鿿＀-￯\n*#$]*`, 'g');
+  function fixMathText(text) {
+    const s = String(text ?? '');
+    if (!/\\[a-zA-Z]|[\^_]\{/.test(s) && s.indexOf('%') < 0) return s;
+    // TeXでは % が注釈の開始になり、後ろが消えてしまう。\text{ } の中では \% が使えないので、外に出して \% にする
+    const escPct = m => m
+      .replace(/\\(text|mathrm|mbox)\{([^{}]*)\}/g, (all, cmd, inner) => {
+        inner = inner.replace(/\\%/g, '%');
+        return inner.indexOf('%') < 0 ? all : inner.split('%').map(x => x ? `\\${cmd}{${x}}` : '').join('\\%');
+      })
+      .replace(/(?<!\\)%/g, '\\%');
+    const wrapBare = seg => seg.replace(BARE_LATEX_RE, run => {
+      const core = run.trim();
+      if (!core) return run;
+      const lead = run.slice(0, run.indexOf(core));
+      return `${lead}$${escPct(core)}$${run.slice(lead.length + core.length)}`;
+    });
+    const re = new RegExp(MATH_SRC, 'g');
+    let out = '', last = 0, m;
+    while ((m = re.exec(s))) {
+      out += wrapBare(s.slice(last, m.index)) + escPct(m[0]);
+      last = m.index + m[0].length;
+    }
+    return out + wrapBare(s.slice(last));
+  }
+  // Markdownに変換する。数式の中の \ { } _ * がMarkdownに壊されないよう、数式部分は退避しておく
+  function markedWithMath(text) {
+    const store = [];
+    const t = fixMathText(text).replace(new RegExp(MATH_SRC, 'g'), m => { store.push(m); return `MATHPH${store.length - 1}XQ`; });
+    // 「<A>」「x<y」のような山括弧がHTMLタグと見なされて消えないよう、よく使うタグ以外の < は文字として扱う
+    const safe = t.replace(/<(?!\/?(?:br|sub|sup|b|i|u|em|strong|code|p|ul|ol|li|span|table|thead|tbody|tr|th|td)\b)/gi, '&lt;');
+    return marked.parse(safe).replace(/MATHPH(\d+)XQ/g, (_, i) => escapeHtml(store[i]));
+  }
+  // 数式の整形（MathJaxの読み込みが終わっていなければ、終わるまで待つ）
+  function typesetMath(els) {
+    return new Promise(resolve => {
+      let tries = 0;
+      const run = () => {
+        if (window.MathJax && window.MathJax.typesetPromise) {
+          const ready = (MathJax.startup && MathJax.startup.promise) ? MathJax.startup.promise : Promise.resolve();
+          ready.then(() => MathJax.typesetPromise(els)).then(resolve, e => { console.error('MathJax error:', e); resolve(); });
+        } else if (tries++ < 100) setTimeout(run, 100);
+        else resolve();
+      };
+      run();
+    });
+  }
+
   function richText(q, text) {
     if (q && q.plain) return escapeHtml(text).replace(/\n/g, '<br>');
-    return DOMPurify.sanitize(marked.parse(String(text ?? '')));
+    return DOMPurify.sanitize(markedWithMath(String(text ?? '')));
   }
 
   function optionHtml(q, idx, opt) {
     if (q && q.plain) return `<b>${idx + 1}.</b> ${escapeHtml(opt).replace(/\n/g, '<br>')}`;
-    return DOMPurify.sanitize(marked.parse(`**${idx + 1}.** ${opt}`));
+    return DOMPurify.sanitize(markedWithMath(`**${idx + 1}.** ${opt}`));
   }
 
   // 解説文（Markdown）に差し込む文字列の記号をエスケープする
@@ -1145,10 +1197,10 @@
   async function renderContent(text, elementId) {
       const el = document.getElementById(elementId);
       if (!el) return;
-      const html = DOMPurify.sanitize(marked.parse(text));
+      const html = DOMPurify.sanitize(markedWithMath(text));
       el.innerHTML = html;
-      if (window.MathJax && window.MathJax.typesetPromise) {
-          try { await MathJax.typesetPromise([el]); } catch (err) { console.error("MathJax error:", err); }
+      if (window.MathJax) {
+          try { await typesetMath([el]); } catch (err) { console.error("MathJax error:", err); }
       }
   }
 
@@ -1922,7 +1974,7 @@
       if (q) {
         const correct = correctIndexes(q);
         const opts = q.options.map((o, i) => `<div class="bm-opt ${correct.includes(i) ? 'correct' : ''}">${optionHtml(q, i, o)}</div>`).join('');
-        const aiExp = savedExplanations[q.id] ? `<div class="hist-ai-box md-content" style="margin-top:10px;"><div class="ai-exp-title">✨ AI詳細解説</div>${DOMPurify.sanitize(marked.parse(explanationMarkdown(savedExplanations[q.id])))}</div>` : '';
+        const aiExp = savedExplanations[q.id] ? `<div class="hist-ai-box md-content" style="margin-top:10px;"><div class="ai-exp-title">✨ AI詳細解説</div>${DOMPurify.sanitize(markedWithMath(explanationMarkdown(savedExplanations[q.id])))}</div>` : '';
         const img = q.imageUrl ? `<div style="text-align:center; margin: 8px 0;"><a href="${q.imageUrl}" target="_blank" rel="noopener"><img loading="lazy" src="${q.imageUrl}" alt="問題の原本画像" class="question-image" style="margin-bottom:0;" onerror="this.parentElement.style.display='none';"></a></div>` : '';
         body = `<div class="bm-q md-content">${richText(q, q.question)}</div>
           <details>
@@ -1930,7 +1982,7 @@
             ${img}
             ${opts}
             <div style="margin: 8px 0; font-weight: bold; font-size: 0.9rem;">正解: ${escapeHtml(correctLabel(q))}</div>
-            <div class="md-content">${DOMPurify.sanitize(marked.parse(String(q.explanation || '')))}</div>
+            <div class="md-content">${DOMPurify.sanitize(markedWithMath(String(q.explanation || '')))}</div>
             ${aiExp}
           </details>`;
       }
@@ -1938,7 +1990,7 @@
       card.querySelector('.bookmark-btn').onclick = () => { delete userMemory.bookmarks[id]; saveUserData(); updateBookmarkOpenButton(); renderBookmarks(); };
       listEl.appendChild(card);
     });
-    if (window.MathJax && window.MathJax.typesetPromise) MathJax.typesetPromise([listEl]).catch(err => console.error(err));
+    if (window.MathJax) typesetMath([listEl]).catch(err => console.error(err));
   }
 
   window.clearBookmarksOfSubject = function() {
@@ -2156,8 +2208,8 @@
     body.innerHTML = related.length
       ? related.map(renderNoteCard).join('')
       : '<div class="empty-msg">この問題に関連するノートは見つかりませんでした。<br><a href="viewer.html" target="_blank" rel="noopener">まとめノートを開く ↗</a></div>';
-    if (window.MathJax && window.MathJax.typesetPromise) {
-      MathJax.typesetPromise([body]).catch(err => console.error("MathJax error:", err));
+    if (window.MathJax) {
+      typesetMath([body]).catch(err => console.error("MathJax error:", err));
     }
   };
 
@@ -2566,7 +2618,9 @@
   // AIに出力させるJSONの形（正答は「番号」と「正解の選択肢の文章」の両方を出させ、食い違いを検出できるようにする）
   const AI_JSON_FORMAT = `{"questions": [{"theme": "取り上げたテーマ名", "question": "問題文", "options": ["選択肢の文章1", "選択肢の文章2", "選択肢の文章3", "選択肢の文章4", "選択肢の文章5"], "correct_option": "正解の選択肢の文章（optionsの中のものと一字一句同じ）", "answer": 0, "explanation": "解説"}]}
 ・options は必ず5つにし、先頭に ①・1. などの番号は付けないこと。
-・answer は正解の番号で、最初の選択肢を 0 とする 0〜4 の整数にすること。`;
+・answer は正解の番号で、最初の選択肢を 0 とする 0〜4 の整数にすること。
+・数式・数値・単位つきの式は、選択肢の中も含めて、必ず $...$ で囲んだLaTeXで書くこと（例: $35.4\\,\\%$）。$ で囲まずに \\text{ } や \\frac{ } だけを書かないこと。
+・単位の角括弧は [%] のように普通の文字で書き、\\[ \\] は数式の表示以外に使わないこと。`;
 
   // --- AI生成の中止 ---
   class AiCancelled extends Error { constructor() { super('cancelled'); this.name = 'AiCancelled'; } }
@@ -2680,10 +2734,10 @@
 
     return {
       ok: true,
-      question: question,
-      options: options,
+      question: fixMathText(question),
+      options: options.map(fixMathText),
       answer: idx,
-      explanation: String(raw.explanation ?? '').trim() || '（解説なし）',
+      explanation: fixMathText(String(raw.explanation ?? '').trim()) || '（解説なし）',
       theme: String(raw.theme ?? '').trim()
     };
   }
@@ -3074,8 +3128,8 @@ ${AI_JSON_FORMAT}
       btn.onclick = () => selectMockOption(idx);
       optBox.appendChild(btn);
     });
-    if (window.MathJax && window.MathJax.typesetPromise) {
-      MathJax.typesetPromise([document.getElementById('q-text'), optBox]).catch(err => console.error("MathJax error:", err));
+    if (window.MathJax) {
+      typesetMath([document.getElementById('q-text'), optBox]).catch(err => console.error("MathJax error:", err));
     }
 
     document.getElementById('exp-box').classList.remove('show');
@@ -3594,8 +3648,8 @@ ${AI_JSON_FORMAT}`;
     });
 
     // 画面に配置した問題文と選択肢の数式を一括でレンダリング
-    if (window.MathJax && window.MathJax.typesetPromise) {
-        MathJax.typesetPromise([document.getElementById('q-text'), document.getElementById('opt-box')]).catch(err => console.error("MathJax error:", err));
+    if (window.MathJax) {
+        typesetMath([document.getElementById('q-text'), document.getElementById('opt-box')]).catch(err => console.error("MathJax error:", err));
     }
 
     document.getElementById('exp-box').classList.remove('show');
@@ -4077,9 +4131,9 @@ ${answerText}`;
       const aiBox = document.createElement('div');
       aiBox.className = 'hist-ai-box md-content';
       aiBox.innerHTML = `<div class="ai-exp-title">✨ AI詳細解説<span class="ai-saved-meta">💾 ${saved.date}</span></div>` +
-        DOMPurify.sanitize(marked.parse(explanationMarkdown(saved)));
+        DOMPurify.sanitize(markedWithMath(explanationMarkdown(saved)));
       box.appendChild(aiBox);
-      if (window.MathJax && window.MathJax.typesetPromise) MathJax.typesetPromise([aiBox]).catch(err => console.error(err));
+      if (window.MathJax) typesetMath([aiBox]).catch(err => console.error(err));
     } else if (!isAiQuestion(q) && localStorage.getItem('my_gemini_api_key')) {
       const btn = document.createElement('button');
       btn.className = 'hist-ai-btn';
@@ -4192,14 +4246,14 @@ ${answerText}`;
       markWrap.append(markEl, bmBtn);
       
       const expContainer = item.querySelector('.hist-exp-content');
-      expContainer.innerHTML = DOMPurify.sanitize(marked.parse(q.explanation));
+      expContainer.innerHTML = DOMPurify.sanitize(markedWithMath(q.explanation));
       const extras = document.createElement('div');
       expContainer.after(extras);
       renderHistoryExtras(extras, q);
     });
     
-    if (window.MathJax && window.MathJax.typesetPromise) {
-        MathJax.typesetPromise([historyList]).catch(err => console.error(err));
+    if (window.MathJax) {
+        typesetMath([historyList]).catch(err => console.error(err));
     }
 
     if (displayedCount === 0) {
