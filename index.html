@@ -492,6 +492,7 @@
         <li><b>Notionへの自動反映:</b> 設定の「☁️ Notionへ自動で反映」で、ブックマークの変更をNotionのデータベースへ自動で反映できます（中継サーバーの作り方は worker/README.md）。</li>
         <li><b>腕試しのPDF出力:</b> 腕試しの設定画面の「📄 この出題セットを問題冊子PDFにする」（過去問セット）、試験中の「📄 PDF」、採点後の「📄 解答・解説つきPDF／問題冊子・解答用紙のPDF」から、試験のような体裁（表紙・注意事項・問題・解答用紙・解答解説）のPDFを作れます。出力画面で「PDFとして保存」を選んでください。</li>
         <li><b>AI問題セットの先行生成:</b> 腕試しの設定画面でAI問題セットを選ぶと、裏で問題を先に作り始めます（「✅ 準備ができています」と出たら、すぐに開始できます）。試験を始めると、次回用のセットを自動で作っておきます。作った問題はこの端末に最長14日間保存されます。</li>
+        <li><b>AI問題の品質チェック:</b> AIが作った問題は、「誤りが2つある」「正解が一つに決まらない」といった問題を避けるため、別のAI呼び出しで正解を知らない状態から解き直して確認し、食い違う問題を除きます（設定でオフにもできます。オフだと速くなりますが、質が下がることがあります）。</li>
         <li><b>弱点克服フィルター:</b> 「未回答の問題」や「過去に間違えた問題」だけを優先して出題し、効率的な復習が可能です。</li>
         <li><b>傾向重視:</b> 出題順序を「傾向重視」にすると、近年よく出題されるテーマが優先的に出題されます。</li>
       </ul>
@@ -685,6 +686,13 @@
           <div class="font-size-row" id="ai-chips">
             <button class="chip" data-ai="on" onclick="setAiEnabled(true)">使う</button>
             <button class="chip" data-ai="off" onclick="setAiEnabled(false)">使わない（すべて非表示）</button>
+          </div>
+        </div>
+        <div class="filter-group ai-only" style="margin-top: 16px;">
+          <label>AI問題の品質チェック</label>
+          <div class="font-size-row" id="aistrict-chips">
+            <button class="chip" data-st="on" onclick="setAiStrict(true)">する（別のAI確認で、怪しい問題を除く）</button>
+            <button class="chip" data-st="off" onclick="setAiStrict(false)">しない（速い）</button>
           </div>
         </div>
         <div class="filter-group ai-only" style="margin-top: 16px;">
@@ -1981,6 +1989,7 @@
     if (pf.count && document.querySelector(`#count-filter option[value="${pf.count}"]`)) document.getElementById('count-filter').value = pf.count;
     document.documentElement.style.fontSize = FONT_PX[pf.font] || FONT_PX.m;
     document.querySelectorAll('#font-chips .chip').forEach(c => c.classList.toggle('on', c.dataset.font === (pf.font || 'm')));
+    document.querySelectorAll('#aistrict-chips .chip').forEach(c => c.classList.toggle('on', (c.dataset.st === 'on') === (pf.aiStrict !== false)));
   }
   window.onPrefChange = function() {
     savePref('order', document.getElementById('order-filter').value);
@@ -3462,10 +3471,81 @@
     return r;
   }
 
+
+  // --- AI問題の品質チェック: 別のAI呼び出しで、正解を知らない状態で解かせ、各選択肢の正誤を判定させて、食い違う問題を除く ---
+  const isStrictAi = () => !(userMemory.prefs && userMemory.prefs.aiStrict === false);
+  window.setAiStrict = function(on) {
+    savePref('aiStrict', !!on);
+    document.querySelectorAll('#aistrict-chips .chip').forEach(c => c.classList.toggle('on', (c.dataset.st === 'on') === !!on));
+    showToast(on ? 'AI問題の品質チェックをオンにしました' : 'AI問題の品質チェックをオフにしました（速くなりますが、質が下がることがあります）');
+  };
+  async function verifyChunk(list, apiKey, signal) {
+    const sj = SUBJECTS[currentSubject] || SUBJECTS.senmon;
+    const body = list.map((q, i) => `【問${i + 1}】${q.question}\n` + q.options.map((o, k) => `${k + 1}. ${o}`).join('\n')).join('\n\n');
+    const prompt = `あなたは${sj.examName}の厳格な校閲者です。次の五肢択一問題を、正解を知らない状態で、それぞれ自分で解いてください。
+各問について、(1) 各選択肢が事実として正しい記述なら「正」、誤りなら「誤」と判定し（計算問題は、その値が正しい答えなら「正」）、(2) 問題文の指示（不適切なものを選ぶ／適切なものを選ぶ／最も近い値を選ぶ等）に従って、正解となる選択肢が1つに決まるなら、その番号（1〜5）を、決まらない（正解が複数ある・正解がない・曖昧）なら0を answer に書いてください。
+厳密に判定し、少しでも曖昧・誤りがあれば、その旨を flaw に書いてください。
+出力は次のJSONだけにしてください。
+{"results": [{"no": 1, "verdicts": ["正","誤","正","正","正"], "answer": 2, "flaw": ""}]}
+
+${body}`;
+    const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { response_mime_type: 'application/json' } };
+    const { res, data } = await geminiPost(AI_MODEL, apiKey, payload, signal);
+    if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+    const txt = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const obj = JSON.parse(txt.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+    return Array.isArray(obj.results) ? obj.results : (Array.isArray(obj) ? obj : []);
+  }
+  // list: normalizeAiQuestion の結果（または同じ形の問題）の配列。品質チェックを通った問題だけを返す。チェック自体に失敗したときは、そのまま通す
+  async function filterVerified(list, job, onMsg) {
+    if (!isStrictAi() || list.length === 0) return list;
+    const apiKey = localStorage.getItem('my_gemini_api_key');
+    if (!apiKey) return list;
+    if (onMsg) onMsg('問題の品質をAIが確認中...');
+    const keep = list.map(() => true);
+    try {
+      await waitAiPause(job);
+      const CH = 12;
+      const chunks = [];
+      for (let i = 0; i < list.length; i += CH) chunks.push(list.slice(i, i + CH).map((q, k) => ({ q, idx: i + k })));
+      await Promise.all(chunks.map(async ch => {
+        const results = await verifyChunk(ch.map(c => c.q), apiKey, job ? job.controller.signal : undefined);
+        ch.forEach((c, k) => {
+          const r = results.find(x => +x.no === k + 1) || results[k];
+          if (!r) return;
+          const v = Array.isArray(r.verdicts) ? r.verdicts.map(x => /^\s*(誤|×|✕|false)/i.test(String(x)) ? '誤' : '正') : null;
+          const kind = stemKind(c.q.question);
+          const ans = parseInt(r.answer, 10);
+          let bad = false;
+          if (!(ans >= 1 && ans <= 5)) bad = true;                          // 正解が一意に決まらない
+          else if (ans - 1 !== c.q.answer) bad = true;                       // 校閲者の答えが、出題側の正解と違う
+          if (!bad && kind && v && v.length === 5) {
+            const wrong = v.filter(x => x === '誤').length;
+            if (kind === 'neg' && wrong !== 1) bad = true;                   // 誤りの選択肢が2つ以上（または0）
+            if (kind === 'pos' && 5 - wrong !== 1) bad = true;
+          }
+          if (bad) { keep[c.idx] = false; console.warn('品質チェックで除外:', String(c.q.question).slice(0, 40), r.flaw || ''); }
+        });
+      }));
+    } catch (e) {
+      if (e instanceof AiCancelled || (job && job.aborted)) throw new AiCancelled();
+      console.warn('品質チェックに失敗したため、そのまま使います:', e.message);
+      return list;
+    }
+    return list.filter((_, i) => keep[i]);
+  }
+
   // AIに出力させるJSONの形（正答は「番号」と「正解の選択肢の文章」の両方を出させ、食い違いを検出できるようにする）
-  const AI_JSON_FORMAT = `{"questions": [{"theme": "取り上げたテーマ名", "question": "問題文", "options": ["選択肢の文章1", "選択肢の文章2", "選択肢の文章3", "選択肢の文章4", "選択肢の文章5"], "correct_option": "正解の選択肢の文章（optionsの中のものと一字一句同じ）", "answer": 0, "explanation": "解説"}]}
+  const AI_JSON_FORMAT = `{"questions": [{"theme": "取り上げたテーマ名", "question": "問題文", "options": ["選択肢の文章1", "選択肢の文章2", "選択肢の文章3", "選択肢の文章4", "選択肢の文章5"], "correct_option": "正解の選択肢の文章（optionsの中のものと一字一句同じ）", "answer": 0, "type": "不適切を選ぶ または 適切を選ぶ または その他", "judgements": ["正", "正", "誤", "正", "正"], "explanation": "解説"}]}
 ・options は必ず5つにし、先頭に ①・1. などの番号は付けないこと。
 ・answer は正解の番号で、最初の選択肢を 0 とする 0〜4 の整数にすること。
+・type は、問題が「不適切（誤り）なものを選ぶ」形式か、「適切（正しい）ものを選ぶ」形式か、それ以外（計算・組合せなど）かを書く。
+・judgements は、options の各選択肢（先頭から5つ）が、事実として正しい記述なら「正」、誤りなら「誤」を書く（計算問題は、その値が正しい答えなら「正」）。必ず、解説の内容と一致させること。
+【問題の質について（重要）】
+・「不適切なものを選ぶ」問題: 誤りの選択肢はちょうど1つだけにする。残り4つは、教科書・法令・規格で確実に正しいと言える記述だけにし、「正しいか曖昧」「条件によっては誤り」という記述を混ぜない。誤りの選択肢は、専門家が見れば明確に誤りと言えるものにする。
+・「適切なものを選ぶ」問題: 正しい選択肢はちょうど1つだけにする。残り4つは、明確に誤りと言える記述にする。
+・事実・数値・条文に自信がない内容は出題しない。実在しない法令・規格・用語を作らない。「必ず」「すべて」などの断定語で、正誤が曖昧になる文を作らない。
+・出題後に、各選択肢を自分で見直し、正解が1つに決まることを確かめてから出力する。
 ・出力は簡潔にすること。問題文は必要最小限の長さにし、explanation は正解の根拠と主な誤りの要点を、全体で250字以内にまとめる。
 ・過去問の問題文・選択肢を、そのまま、または語句を少し変えただけで出題してはならない。出題例はテーマ・難易度・形式の参考にとどめ、題材・状況設定・数値・選択肢の組立てを新しく考えた「完全なオリジナル問題」にすること。
 ・数式・数値・単位つきの式は、選択肢の中も含めて、必ず $...$ で囲んだLaTeXで書くこと（例: $35.4\\,\\%$）。$ で囲まずに \\text{ } や \\frac{ } だけを書かないこと。
@@ -3578,6 +3658,14 @@
 
   // 1問分を検証して整える。使えない場合は { ok: false, error } を返す
   // 正答は「正解の選択肢の文章（correct_option）」を最優先にして特定し、番号（answer: 0〜4）はその次に使う（番号のずれによる誤採点を防ぐ）
+  // 問題文の「…ものはどれか」から、不適切を選ぶ(neg)か適切を選ぶ(pos)かを判定する（組合せ・計算・大小比較などはnull）
+  function stemKind(question) {
+    const sent = (String(question).split(/(?<=[。？?])/).find(x => /どれか|選べ|はどれ/.test(x))) || '';
+    if (!sent || /組合せ|組み合わせ|組合わせ|[（(][ア-エａ-ｄa-d][）)]|空欄|数値|計算|いくつ|何個|個数|最も大きい|最も小さい|大きい順|小さい順|順に|大小|値は|値を|式は|式を|最も近い/.test(sent)) return null;
+    if (/不適切|不適当|誤っ|誤り|適切でな|適当でな|正しくな|間違っ|異なる|あてはまらな|当てはまらな|含まれない|該当しない|ふさわしくな/.test(sent)) return 'neg';
+    if (/適切な|適当な|正しい|正しく|あてはまる|当てはまる|該当する|含まれる|ふさわしい/.test(sent)) return 'pos';
+    return null;
+  }
   function normalizeAiQuestion(raw) {
     if (!raw || typeof raw !== 'object') return { ok: false, error: '形式が不正' };
     const question = String(raw.question ?? '').trim();
@@ -3606,6 +3694,22 @@
     }
     if (idx < 0) return { ok: false, error: '正答を特定できない' };
 
+    // 「不適切（適切）なものを選ぶ」問題で、誤り（正しい）選択肢が2つ以上ある矛盾を弾く
+    const kind = stemKind(question);
+    const jr = raw.judgements ?? raw.judgments;
+    if (kind && Array.isArray(jr) && jr.length === 5) {
+      const j = jr.map(x => /^\s*(誤|×|✕|false|不適切|incorrect)/i.test(String(x)) ? '誤' : /^\s*(正|○|〇|true|適切|correct)/i.test(String(x)) ? '正' : '?');
+      if (!j.includes('?')) {
+        const wrong = j.filter(x => x === '誤').length;
+        if (kind === 'neg') {
+          if (wrong !== 1) return { ok: false, error: `誤りの選択肢が${wrong}つある（1つのはず）` };
+          if (j[idx] !== '誤') return { ok: false, error: '正答の選択肢が「誤り」と判定されていない（矛盾）' };
+        } else {
+          if (5 - wrong !== 1) return { ok: false, error: `正しい選択肢が${5 - wrong}つある（1つのはず）` };
+          if (j[idx] !== '正') return { ok: false, error: '正答の選択肢が「正しい」と判定されていない（矛盾）' };
+        }
+      }
+    }
     return {
       ok: true,
       question: fixMathText(question),
@@ -3658,7 +3762,7 @@
   // AI予想問題のセットを作る（分野ごとに4問ずつ生成し、重複を避けるため既出の問題文を渡す）
 
   // --- 腕試しのAI問題セットの先行生成（試験を始めるときに待たなくて済むよう、裏で次のセットを作っておく） ---
-  const AI_MOCK_CACHE_KEY = 'ai_mock_cache';
+  const AI_MOCK_CACHE_KEY = 'ai_mock_cache_v2';   // 品質チェック導入前に先行生成した問題は使わない
   const AI_MOCK_CACHE_TTL = 14 * 24 * 3600 * 1000;
   let mockPrep = null;   // 作成中: { subject, job, done, total, msg, promise }
 
@@ -3816,6 +3920,15 @@
       // 1問もAIが作れなかったときだけ、失敗として知らせる（一部でも作れていれば、残りは過去問で補う）
       if (!gotAny && lastBusy && totalAiNeed > 0) throw lastBusy;
 
+      // 2.5) 品質チェック: 別のAI呼び出しで全問を確認し、誤りが2つあるなど怪しい問題を除く（除いた分は、下で作り直す）
+      if (isStrictAi()) {
+        throwIfCancelled(job);
+        updateProgress("問題の品質をAIが確認中...", 0);
+        const allQs = tasks.flatMap(t => t.batch);
+        const okQs = new Set(await filterVerified(allQs, job));
+        tasks.forEach(t => { const kept = t.batch.filter(q => okQs.has(q)); t.missing += t.batch.length - kept.length; t.batch = kept; });
+      }
+
       // 3) 分野ごとにまとめ、似すぎた問題を作り直し、足りない分は過去問で補う
       for (let gi = 0; gi < plan.length; gi++) {
         const { genre, past } = plan[gi];
@@ -3842,7 +3955,8 @@
             const reSeeds = pickThemeSeeds(genre, dupIdx.length, usedThemes);
             const prev = examPrevText + batch.map(q => "・" + q.question.replace(/\s+/g, ' ').slice(0, 60)).join("\n") + "\n";
             const redo = await fetchMockAIBatch(genre, dupIdx.length, apiKey, false, prev, retryCallback, reSeeds, job);
-            dupIdx.forEach((di, k) => { if (redo[k]) batch[di] = redo[k]; });
+            const redoOk = await filterVerified(redo, job);
+            dupIdx.forEach((di, k) => { if (redoOk[k]) batch[di] = redoOk[k]; });
           } catch (e) {
             if (e instanceof AiCancelled) throw e;
             console.warn("作り直しに失敗したため、そのまま使います:", e.message);
@@ -3856,8 +3970,9 @@
           updateProgress("足りない問題をAIが作り直し中...", 0);
           try {
             const more = await fetchMockAIBatch(genre, stillMissing, apiKey, false, examPrevText + batch.map(q => "・" + q.question.replace(/\s+/g, ' ').slice(0, 60)).join("\n") + "\n", retryCallback, pickThemeSeeds(genre, stillMissing, usedThemes), job);
-            batch.push(...more);
-            stillMissing = Math.max(0, stillMissing - more.length);
+            const moreOk = await filterVerified(more, job);
+            batch.push(...moreOk);
+            stillMissing = Math.max(0, stillMissing - moreOk.length);
           } catch (e) {
             if (e instanceof AiCancelled) throw e;
             console.warn("足りない問題の作り直しに失敗しました:", e.message);
@@ -4490,7 +4605,14 @@ ${AI_JSON_FORMAT}`;
       else console.warn(`AIの問題を除外しました（${r.error}）`);
     });
     if (valid.length === 0) throw new AiNoUsable("AIが使える問題を作れませんでした。もう一度お試しください。");
-    return { valid, lite: useLiteModel };
+    // 品質チェック（別のAI呼び出し）。全部が除かれたときは、1回だけ作り直す
+    const pj = { get aborted() { return !!(signal && signal.aborted); }, controller: { signal } };
+    const verified = await filterVerified(valid, pj);
+    if (verified.length === 0) {
+      if (attempt < 1) return requestPracticeAI(useLiteModel, signal, attempt + 1);
+      throw new AiNoUsable("AIが作った問題が品質チェックを通りませんでした。もう一度お試しください。");
+    }
+    return { valid: verified, lite: useLiteModel };
   }
 
   async function generateAIQuestionsBatch(useLiteModel = false, job = null) {
