@@ -670,7 +670,7 @@
           <input type="url" id="notion-url" class="filter-input" placeholder="WorkerのURL（https://…workers.dev）" style="margin-bottom: 8px;">
           <input type="password" id="notion-key" class="filter-input" placeholder="同期キー（Workerに登録した合言葉）" style="margin-bottom: 8px;">
           <label style="display:flex;gap:8px;align-items:center;font-weight:normal;margin-bottom:6px;"><input type="checkbox" id="notion-enabled"> 自動で反映する</label>
-          <label style="display:flex;gap:8px;align-items:center;font-weight:normal;margin-bottom:6px;"><input type="checkbox" id="notion-mistakes"> 間違えた問題も反映する（Worker側の追加設定が必要）</label>
+          <label style="display:flex;gap:8px;align-items:center;font-weight:normal;margin-bottom:6px;"><input type="checkbox" id="notion-mistakes"> 間違えた問題も反映する</label>
           <label style="display:flex;gap:8px;align-items:center;font-weight:normal;margin-bottom:8px;"><input type="checkbox" id="notion-delete"> ブックマークを外したら、Notionのページもゴミ箱へ移す</label>
           <div style="display: flex; gap: 8px;">
             <button class="nav-btn secondary" onclick="saveNotionSettings()" style="flex: 1; padding: 12px; font-size: 0.9rem;">保存</button>
@@ -2315,11 +2315,13 @@
 
   // --- Notionへの自動反映（Cloudflare Workers の中継サーバー経由。設定は worker/README.md） ---
   const NOTION_SYNC_KEY = 'notion_sync';
-  let notionCfg = { url: '', key: '', enabled: false, deleteOnRemove: false, mistakes: false, removed: [], removedM: [], last: '', error: '' };
+  let notionCfg = { url: '', key: '', enabled: false, deleteOnRemove: false, mistakes: true, removed: [], removedM: [], last: '', error: '' };
   let notionBusy = false, notionTimer = null;
 
   function loadNotionCfg() {
     try { notionCfg = Object.assign(notionCfg, JSON.parse(localStorage.getItem(NOTION_SYNC_KEY) || '{}')); } catch (e) {}
+    // 「間違えた問題」の反映は、以前の設定に項目がない場合も既定でオン
+    if (typeof notionCfg.mistakes !== 'boolean') notionCfg.mistakes = true;
     const el = id => document.getElementById(id);
     if (!el('notion-url')) return;
     el('notion-url').value = notionCfg.url || '';
@@ -2439,8 +2441,12 @@
     notionBusy = true;
     try {
       renderNotionStatus('Notionに反映中...');
-      const results = [await syncTarget('bookmarks', force)];
-      if (notionCfg.mistakes) results.push(await syncTarget('mistakes', force));
+      // 片方が失敗しても、もう片方は送る
+      const results = [];
+      for (const target of notionCfg.mistakes ? ['bookmarks', 'mistakes'] : ['bookmarks']) {
+        try { results.push(await syncTarget(target, force)); }
+        catch (e) { results.push({ sent: 0, failed: 1, lastErr: `${target === 'mistakes' ? '間違えた問題' : 'ブックマーク'}: ${e.message}`, removed: 0 }); }
+      }
       const failed = results.reduce((t, r) => t + r.failed, 0);
       const lastErr = (results.find(r => r.failed) || {}).lastErr || '';
       const sent = results.reduce((t, r) => t + r.sent + r.removed, 0);
