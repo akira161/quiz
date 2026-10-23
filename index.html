@@ -343,6 +343,10 @@
     .bm-q { line-height: 1.7; margin-bottom: 8px; }
     .bm-opt { padding: 6px 8px; margin-bottom: 4px; border-radius: 6px; border: 1px solid var(--border); font-size: 0.9rem; }
     .bm-opt.correct { background: var(--success-bg); border-color: var(--success-text); color: var(--success-text); font-weight: bold; }
+    .bm-status { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 999px; padding: 5px 10px; font-size: 0.75rem; font-weight: 700; cursor: pointer; }
+    .bm-status.doing { background: #fef3c7; border-color: #f59e0b; color: #92400e; }
+    .bm-status.done { background: var(--success-bg); border-color: var(--success-text); color: var(--success-text); }
+    .bm-memo { width: 100%; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--text); font-size: 16px; font-family: inherit; resize: vertical; min-height: 44px; }
     .bm-card details summary { color: var(--primary); font-weight: bold; cursor: pointer; margin-bottom: 8px; }
 
     /* --- 科目切り替え --- */
@@ -442,6 +446,7 @@
         <li><b>問題の図・表:</b> 図や表が必要な問題には、問題文の下に原本の画像が自動で表示されます。それ以外の問題も「📄 原本画像を見る」で試験問題そのままの画像を確認できます。</li>
         <li><b>ブックマーク:</b> 問題画面の ☆ を押すと登録できます（過去問・AI生成問題・腕試しの問題、腕試しの結果一覧からも）。スタート画面の「★ ブックマークを見る」で見返したり、ブックマークした問題だけを解いたりできます。</li>
         <li><b>操作のコツ:</b> スタート画面の「出題する問題」「出題数」はボタン1つで切り替えられます。問題画面では、下の「◀ 前」で前の問題に戻れ、キーボードでは 1〜5=選択 / Enter・→=次へ / ←=前へ / B=ブックマーク が使えます。スマホの戻るボタンでも、進捗を保存してスタート画面に戻れます（腕試し中は確認が出ます）。結果画面の「間違えた問題をもう一度解く」で復習できます。文字の大きさは「⚙️ 設定」で変えられます。</li>
+        <li><b>ブックマークの活用:</b> ブックマーク画面で、復習状況（未着手→復習中→克服済み）の切替、メモ、検索、状況での絞り込みができます。ブックマークした問題は、解くと自動で状況が更新されます（間違えたら復習中、2回連続正解で克服済み）。「📤 Notion・ファイルに書き出す」で、CSV（Notionのデータベース用）やMarkdown（Notionのページに貼り付け）を作れます。設定の「学習データのバックアップ」で全データを保存・復元できます。</li>
         <li><b>弱点克服フィルター:</b> 「未回答の問題」や「過去に間違えた問題」だけを優先して出題し、効率的な復習が可能です。</li>
         <li><b>傾向重視:</b> 出題順序を「傾向重視」にすると、近年よく出題されるテーマが優先的に出題されます。</li>
       </ul>
@@ -657,6 +662,16 @@
 
         <hr style="border: none; border-top: 1px dashed var(--border); margin: 20px 0;">
         <div class="filter-group">
+          <label>💾 学習データのバックアップ</label>
+          <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 8px;">学習記録・ブックマーク・腕試し履歴・保存したAI解説をファイルに保存します。機種変更やブラウザのデータ消去に備えられます（APIキーは含みません）。</div>
+          <div style="display: flex; gap: 8px;">
+            <button class="nav-btn secondary" onclick="exportBackup()" style="flex: 1;">書き出す</button>
+            <button class="nav-btn secondary" onclick="document.getElementById('backup-file').click()" style="flex: 1;">読み込む（統合）</button>
+          </div>
+          <input type="file" id="backup-file" accept="application/json,.json" style="display: none;" onchange="importBackup(event)">
+        </div>
+        <hr style="border: none; border-top: 1px dashed var(--border); margin: 20px 0;">
+        <div class="filter-group">
           <div style="font-size: 0.9rem; margin-bottom: 8px;">保存したAI解説: <b id="ai-saved-count">0</b> 件</div>
           <button class="nav-btn secondary" onclick="clearSavedExplanations()" style="margin-bottom: 12px;">保存したAI解説を削除する</button>
           <button class="nav-btn danger" onclick="resetHistory()">学習記録をリセットする</button>
@@ -788,6 +803,14 @@
     <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5;">
       過去問・AI生成問題・腕試しの問題を、問題画面の ☆ で登録できます。ブックマークは学習記録をリセットしても残ります。
     </div>
+    <div class="chips" id="bm-status-chips" style="margin-bottom: 8px;">
+      <button class="chip" data-st="all" onclick="setBmFilter('all')">すべて</button>
+      <button class="chip" data-st="todo" onclick="setBmFilter('todo')">未着手</button>
+      <button class="chip" data-st="doing" onclick="setBmFilter('doing')">復習中</button>
+      <button class="chip" data-st="done" onclick="setBmFilter('done')">克服済み</button>
+      <button class="chip" data-st="memo" onclick="setBmFilter('memo')">メモあり</button>
+    </div>
+    <input type="search" id="bm-search" class="filter-input" placeholder="問題文・メモを検索" oninput="setBmQuery(this.value)" style="margin-bottom: 12px;">
     <div class="filter-group" style="margin-bottom: 12px;">
       <label for="bm-order">出題順（解くとき）</label>
       <select id="bm-order" class="filter-select">
@@ -798,6 +821,26 @@
     </div>
     <button id="bm-start-btn" class="nav-btn" onclick="startBookmarkQuiz()">この科目のブックマークを解く</button>
     <div id="bm-list" style="margin-top: 20px;"></div>
+    <details class="fold" id="bm-export" style="margin-top: 16px;">
+      <summary>📤 Notion・ファイルに書き出す</summary>
+      <div class="fold-body">
+        <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 10px;">
+          ブックマークした問題（問題文・選択肢・正解・解説・メモ・復習状況）を書き出し、Notionで後から確認できます。<br>
+          <b>CSV</b>: Notionの左メニュー「インポート」→「CSV」で、検索・絞り込みできるデータベースになります。<br>
+          <b>Markdown</b>: 「コピー」してNotionのページに貼り付けると、1ページに読みやすく並びます（数式も変換されます）。
+        </div>
+        <div class="filter-group" style="margin-bottom: 8px;">
+          <label for="bm-export-scope">書き出す範囲</label>
+          <select id="bm-export-scope" class="filter-select">
+            <option value="subject">表示中の科目（絞り込み条件を反映）</option>
+            <option value="all">すべての科目（全ブックマーク）</option>
+          </select>
+        </div>
+        <button class="nav-btn" onclick="exportBookmarks('csv')" style="margin-bottom: 8px;">📄 Notion用CSVを保存</button>
+        <button class="nav-btn" onclick="exportBookmarks('md-copy')" style="margin-bottom: 8px;">📋 Markdownをコピー（Notionに貼り付け）</button>
+        <button class="nav-btn secondary" onclick="exportBookmarks('md')">⬇ Markdownファイルを保存</button>
+      </div>
+    </details>
     <button class="nav-btn secondary" onclick="clearBookmarksOfSubject()" style="margin-top: 8px;">この科目のブックマークをすべて外す</button>
     <button class="nav-btn secondary" onclick="goToStart()" style="margin-top: 12px;">設定画面に戻る</button>
   </div>
@@ -1170,6 +1213,7 @@
       localStorage.setItem('app_memory', JSON.stringify(userMemory));
     } catch (e) {
       console.error("メモリの保存エラー", e);
+      showToast('端末の保存容量が足りず、学習記録を保存できませんでした。設定の「バックアップ」で書き出し、不要なデータを削除してください');
     }
   }
 
@@ -1914,7 +1958,22 @@
 
   // --- ブックマーク一覧の画面 ---
   let bmSubject = 'senmon';
+  let bmFilter = 'all', bmQuery = '';
+  const BM_STATUS = { todo: '未着手', doing: '復習中', done: '克服済み' };
   const bookmarkIndexCache = {};
+  const bmStatusOf = e => (e && e.status) || 'todo';
+  function bmMatches(it) {
+    const st = bmStatusOf(it.entry);
+    if (bmFilter === 'memo') { if (!(it.entry.note || '').trim()) return false; }
+    else if (bmFilter !== 'all' && st !== bmFilter) return false;
+    if (bmQuery) {
+      const text = [it.q ? it.q.question : '', ...(it.q ? it.q.options : []), it.entry.note || '', it.q ? [it.q.genre, it.q.subgenre, it.q.topic, it.q.year].join(' ') : ''].join(' ').toLowerCase();
+      if (!text.includes(bmQuery.toLowerCase())) return false;
+    }
+    return true;
+  }
+  window.setBmFilter = function(f) { bmFilter = f; renderBookmarks(); };
+  window.setBmQuery = function(v) { bmQuery = String(v || '').trim(); clearTimeout(window.__bmT); window.__bmT = setTimeout(renderBookmarks, 200); };
 
   async function resolveBookmarks(subject) {
     const entries = Object.entries(userMemory.bookmarks || {}).filter(([, e]) => e.subject === subject).sort((a, b) => b[1].t - a[1].t);
@@ -1957,16 +2016,28 @@
     }
     if (subject !== bmSubject) return;   // 読み込み中に別の科目へ切り替えられた
 
-    const usable = items.filter(it => it.q);
+    const counts = { all: items.length, todo: 0, doing: 0, done: 0, memo: 0 };
+    items.forEach(it => { counts[bmStatusOf(it.entry)]++; if ((it.entry.note || '').trim()) counts.memo++; });
+    document.querySelectorAll('#bm-status-chips .chip').forEach(c => {
+      const k = c.dataset.st;
+      c.textContent = `${k === 'all' ? 'すべて' : k === 'memo' ? 'メモあり' : BM_STATUS[k]}（${counts[k]}）`;
+      c.classList.toggle('on', bmFilter === k);
+    });
+    const shown = items.filter(bmMatches);
+    const usable = shown.filter(it => it.q);
     startBtn.disabled = usable.length === 0;
-    startBtn.textContent = usable.length ? `この科目のブックマークを解く（${usable.length}問）` : 'ブックマークがありません';
+    startBtn.textContent = usable.length ? `${bmFilter === 'all' && !bmQuery ? 'この科目の' : '表示中の'}ブックマークを解く（${usable.length}問）` : 'ブックマークがありません';
     if (items.length === 0) {
       listEl.innerHTML = '<div class="empty-msg" style="padding: 32px 12px;">ブックマークはまだありません。<br>問題画面の ☆ を押すと登録できます。</div>';
       return;
     }
+    if (shown.length === 0) {
+      listEl.innerHTML = '<div class="empty-msg" style="padding: 32px 12px;">条件に一致するブックマークがありません。</div>';
+      return;
+    }
 
     listEl.innerHTML = '';
-    items.forEach(({ id, entry, q }) => {
+    shown.forEach(({ id, entry, q }) => {
       const card = document.createElement('div');
       card.className = 'bm-card';
       const meta = q ? [q.year, q.qNum, q.genre].filter(Boolean).join('　') : '（問題データが見つかりません）';
@@ -1986,12 +2057,160 @@
             ${aiExp}
           </details>`;
       }
-      card.innerHTML = `<div class="bm-head"><span>${escapeHtml(meta)}<br><span style="font-weight:normal;">登録: ${escapeHtml(entry.date || '')}</span></span><button class="bookmark-btn on" title="ブックマークを外す">★</button></div>${body}`;
+      const st = bmStatusOf(entry);
+      card.innerHTML = `<div class="bm-head"><span>${escapeHtml(meta)}<br><span style="font-weight:normal;">登録: ${escapeHtml(entry.date || '')}</span></span><span style="display:flex;align-items:center;gap:6px;"><button class="bm-status ${st}" title="押すと 未着手→復習中→克服済み の順に切り替わります">${BM_STATUS[st]}</button><button class="bookmark-btn on" title="ブックマークを外す">★</button></span></div>${body}<textarea class="bm-memo" placeholder="メモ（覚え方・間違えた理由など）" rows="1">${escapeHtml(entry.note || '')}</textarea>`;
       card.querySelector('.bookmark-btn').onclick = () => { delete userMemory.bookmarks[id]; saveUserData(); updateBookmarkOpenButton(); renderBookmarks(); };
+      card.querySelector('.bm-status').onclick = () => {
+        const order = ['todo', 'doing', 'done'];
+        entry.status = order[(order.indexOf(bmStatusOf(entry)) + 1) % 3];
+        if (entry.status !== 'done') entry.streak = 0;
+        saveUserData(); renderBookmarks();
+      };
+      const memo = card.querySelector('.bm-memo');
+      memo.oninput = () => { entry.note = memo.value.slice(0, 2000); clearTimeout(memo.__t); memo.__t = setTimeout(saveUserData, 500); };
+      memo.onchange = () => { saveUserData(); renderBookmarks(); };
       listEl.appendChild(card);
     });
     if (window.MathJax) typesetMath([listEl]).catch(err => console.error(err));
   }
+
+
+  // --- ブックマークの書き出し（Notion用CSV・Markdown） ---
+  const SUBJECT_JA = { senmon: '専門', kiso: '基礎', tekisei: '適性' };
+  function absUrl(u) { try { return new URL(u, location.href).href; } catch (e) { return u; } }
+  function isoDate(t) { try { return new Date(t).toISOString().slice(0, 10); } catch (e) { return ''; } }
+  function bmKind(q) { return /^MockAI-/.test(q.id) ? '腕試しAI問題' : /^AI-/.test(q.id) ? 'AI生成問題' : '過去問'; }
+
+  async function collectBookmarkExport() {
+    const scope = document.getElementById('bm-export-scope').value;
+    const subjects = scope === 'all' ? Object.keys(SUBJECTS) : [bmSubject];
+    const out = [];
+    for (const sub of subjects) {
+      const items = (await resolveBookmarks(sub)).filter(it => it.q && (scope === 'all' || bmMatches(it)));
+      items.forEach(it => out.push({ sub, ...it }));
+    }
+    return out;
+  }
+  function explanationPlain(q) {
+    const base = String(q.explanation || '').replace(/^【[^】]*】\s*/, '').trim();
+    const ai = savedExplanations[q.id] ? '\n\n【AI詳細解説】\n' + savedExplanations[q.id].text : '';
+    return base + ai;
+  }
+  function noteUrlOf(sub, q) {
+    if (sub === 'senmon' || !q.trendKey || isAiQuestion(q)) return '';
+    return absUrl(`viewer.html?subject=${sub}&c=${encodeURIComponent(q.genre)}&q=${encodeURIComponent(q.trendKey)}`);
+  }
+  function bookmarksToCsv(items) {
+    const header = ['タイトル', '科目', '種別', '出典', '分野', '復習ステータス', 'メモ', '登録日', '正解', '問題文', '選択肢1', '選択肢2', '選択肢3', '選択肢4', '選択肢5', '解説', '原本画像', 'まとめノート', '問題ID'];
+    const esc = v => { v = String(v ?? ''); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const rows = items.map(({ sub, id, entry, q }) => {
+      const src = isAiQuestion(q) ? q.year : `${q.year} ${q.qNum}`;
+      const title = `${SUBJECT_JA[sub]} ${src}｜${String(q.question).replace(/\s+/g, ' ').slice(0, 28)}`;
+      const field = [q.genre, q.subgenre].filter(Boolean).join(' > ');
+      const o = q.options || [];
+      return [title, SUBJECT_JA[sub], bmKind(q), src, field, BM_STATUS[bmStatusOf(entry)], entry.note || '', isoDate(entry.t), hasAnswerOf(q) ? correctLabel(q) : '',
+        q.question, o[0] || '', o[1] || '', o[2] || '', o[3] || '', o[4] || '', explanationPlain(q), q.imageUrl ? absUrl(q.imageUrl) : '', noteUrlOf(sub, q), id].map(esc).join(',');
+    });
+    return '﻿' + header.map(esc).join(',') + '\r\n' + rows.join('\r\n') + '\r\n';
+  }
+  function bookmarksToMarkdown(items) {
+    const bySub = {};
+    items.forEach(it => { (bySub[it.sub] = bySub[it.sub] || []).push(it); });
+    let md = `# ブックマークした問題（${nowLabel()} 書き出し・${items.length}問）\n\n`;
+    Object.keys(bySub).forEach(sub => {
+      md += `## ${SUBJECT_JA[sub]}科目（${bySub[sub].length}問）\n\n`;
+      bySub[sub].forEach(({ entry, q }) => {
+        const src = isAiQuestion(q) ? q.year : `${q.year} ${q.qNum}`;
+        md += `### ${src}　${[q.genre, q.subgenre].filter(Boolean).join(' > ')}\n\n`;
+        md += `状態: **${BM_STATUS[bmStatusOf(entry)]}**　種別: ${bmKind(q)}　登録: ${isoDate(entry.t)}\n\n`;
+        if (entry.note) md += `📝 メモ: ${String(entry.note).replace(/\n/g, ' ')}\n\n`;
+        md += String(q.question).split('\n').map(l => '> ' + l).join('\n') + '\n\n';
+        if (q.imageUrl) md += `![問題の図](${absUrl(q.imageUrl)})\n\n`;
+        (q.options || []).forEach((o, i) => { md += `${i + 1}. ${String(o).replace(/\n/g, ' ')}\n`; });
+        md += `\n**正解: ${hasAnswerOf(q) ? correctLabel(q) : '未登録'}**\n\n`;
+        const ex = explanationPlain(q);
+        if (ex) md += ex + '\n\n';
+        md += '---\n\n';
+      });
+    });
+    return md;
+  }
+  function downloadText(name, text, type) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type }));
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand('copy'); ta.remove(); return ok;
+    } catch (e) { return false; }
+  }
+  window.exportBookmarks = async function(kind) {
+    let items;
+    try { items = await collectBookmarkExport(); }
+    catch (e) { showToast('問題データを読み込めませんでした'); return; }
+    if (items.length === 0) { showToast('書き出すブックマークがありません'); return; }
+    const stamp = isoDate(Date.now());
+    if (kind === 'csv') {
+      downloadText(`ブックマーク_${stamp}.csv`, bookmarksToCsv(items), 'text/csv;charset=utf-8');
+      showToast(`CSV（${items.length}問）を保存しました。Notionの「インポート」→「CSV」で取り込めます`);
+    } else if (kind === 'md') {
+      downloadText(`ブックマーク_${stamp}.md`, bookmarksToMarkdown(items), 'text/markdown;charset=utf-8');
+      showToast(`Markdown（${items.length}問）を保存しました`);
+    } else {
+      const ok = await copyText(bookmarksToMarkdown(items));
+      showToast(ok ? `${items.length}問をコピーしました。Notionのページに貼り付けてください` : 'コピーできませんでした。「Markdownファイルを保存」をお使いください');
+    }
+  };
+
+  // --- 学習データのバックアップ（書き出し・統合して読み込み） ---
+  window.exportBackup = function() {
+    const data = { format: 'quiz-backup', version: 1, exportedAt: new Date().toISOString(), app_memory: userMemory, ai_explanations: savedExplanations };
+    downloadText(`学習データバックアップ_${isoDate(Date.now())}.json`, JSON.stringify(data), 'application/json');
+    showToast('バックアップを保存しました（APIキーは含まれません）');
+  };
+  window.importBackup = function(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const d = JSON.parse(reader.result);
+        if (!d || d.format !== 'quiz-backup' || !d.app_memory) throw new Error('このアプリのバックアップファイルではありません');
+        const m = d.app_memory;
+        const nb = Object.keys(m.bookmarks || {}).length, nh = Object.keys(m.history || {}).length;
+        if (!confirm(`バックアップ（${d.exportedAt ? d.exportedAt.slice(0, 10) : '日付不明'}）を、今のデータに統合します。\nブックマーク ${nb} 件、学習記録 ${nh} 問分、腕試し履歴 ${(m.mockExams || []).length} 件、AI解説 ${Object.keys(d.ai_explanations || {}).length} 件。\n\n同じ問題は新しい方・回数の多い方を残します。よろしいですか？`)) return;
+        // ブックマーク: 登録の新しい方（ステータス・メモも一緒に）
+        userMemory.bookmarks = userMemory.bookmarks || {};
+        Object.entries(m.bookmarks || {}).forEach(([id, e]) => { const cur = userMemory.bookmarks[id]; if (!cur || (e.t || 0) > (cur.t || 0)) userMemory.bookmarks[id] = e; });
+        // 学習記録: 回数の多い方
+        userMemory.history = userMemory.history || {};
+        Object.entries(m.history || {}).forEach(([id, h]) => { const cur = userMemory.history[id]; if (!cur) userMemory.history[id] = h; else { cur.c = Math.max(cur.c || 0, h.c || 0); cur.w = Math.max(cur.w || 0, h.w || 0); } });
+        userMemory.statsBy = userMemory.statsBy || {};
+        Object.entries(m.statsBy || {}).forEach(([k, st]) => { const cur = userMemory.statsBy[k] || { total: 0, correct: 0 }; userMemory.statsBy[k] = { total: Math.max(cur.total, st.total || 0), correct: Math.max(cur.correct, st.correct || 0) }; });
+        // 腕試し履歴: ID重複を除き、古い順に並べて新しい10件を残す
+        const seen = new Set((userMemory.mockExams || []).map(x => x.id));
+        userMemory.mockExams = (userMemory.mockExams || []).concat((m.mockExams || []).filter(x => !seen.has(x.id))).sort((a, b) => String(a.date).localeCompare(String(b.date))).slice(-10);
+        Object.entries(m.mockSeen || {}).forEach(([k, v]) => { userMemory.mockSeen[k] = Array.from(new Set((userMemory.mockSeen[k] || []).concat(v))); });
+        saveUserData();
+        Object.entries(d.ai_explanations || {}).forEach(([id, x]) => { if (!savedExplanations[id]) savedExplanations[id] = x; });
+        try { localStorage.setItem(AI_EXP_KEY, JSON.stringify(savedExplanations)); } catch (e) { showToast('AI解説は容量不足で一部保存できませんでした'); }
+        updateSavedExplanationCount(); updateMemoryUI(); updateFilterUI(); updateBookmarkOpenButton();
+        showToast('バックアップを統合しました');
+      } catch (e) {
+        alert('読み込めませんでした: ' + e.message);
+      }
+    };
+    reader.readAsText(file);
+  };
 
   window.clearBookmarksOfSubject = function() {
     const n = bookmarkCount(bmSubject);
@@ -2006,7 +2225,7 @@
   // ブックマークした問題だけを解く（AI生成問題も含む）
   window.startBookmarkQuiz = async function() {
     let items;
-    try { items = (await resolveBookmarks(bmSubject)).filter(it => it.q); }
+    try { items = (await resolveBookmarks(bmSubject)).filter(it => it.q && bmMatches(it)); }
     catch (e) { alert("問題データを読み込めませんでした: " + e.message); return; }
     if (items.length === 0) return;
     if (bmSubject !== currentSubject) {
@@ -3764,6 +3983,17 @@ ${AI_JSON_FORMAT}`;
       }
       
       bumpStats(isCorrect);
+      // ブックマークした問題の復習状況を自動で更新（間違い→復習中、2回連続正解→克服済み）
+      const bm = userMemory.bookmarks && userMemory.bookmarks[q.id];
+      if (bm) {
+        const before = bmStatusOf(bm);
+        if (isCorrect) {
+          bm.streak = (bm.streak || 0) + 1;
+          if (bm.streak >= 2) bm.status = 'done';
+          else if (before === 'todo') bm.status = 'doing';
+        } else { bm.streak = 0; bm.status = 'doing'; }
+        if (before !== 'done' && bm.status === 'done') showToast('🎉 ブックマークの問題を克服済みにしました');
+      }
       saveUserData();
     }
 
