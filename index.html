@@ -788,7 +788,7 @@
         </div>
       </div>
 
-      <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 12px; text-align: center;">※少々お待ちください</div>
+      <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 12px; text-align: center;">※少々お待ちください（<span id="ai-elapsed">経過 0:00</span>）</div>
       <button id="ai-cancel-btn" class="nav-btn secondary" style="margin-top: 20px;" onclick="cancelAiGeneration()">✕ 生成をやめる</button>
     </div>
 
@@ -3395,18 +3395,33 @@
       { genre: "廃棄物管理", ai: 7, past: 2 }
     ]
   };
-  const AI_BATCH_SIZE = 4;
-  const MOCK_CONCURRENCY = 3;   // 腕試し用のAI問題を同時に作る数
+  const AI_BATCH_SIZE = 3;       // 1回に作らせる問題数（少ないほど1回の応答が速い）
+  const MOCK_CONCURRENCY = 5;    // 同時に作らせる数（混雑したら自動で1に絞る）   // 腕試し用のAI問題を同時に作る数
 
   // Geminiの呼び出し。思考を浅くして速くする（対応していないモデルなら自動で外して再送する）
   let geminiThinkingOk = true;
+  const GEMINI_TIMEOUT_MS = 75000;   // 1回の応答がこれより長くかかったら、待ち続けずにやり直す
   async function geminiPost(modelName, apiKey, payload, signal) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     const send = async (think) => {
       const body = JSON.parse(JSON.stringify(payload));
       if (think) body.generationConfig = Object.assign({}, body.generationConfig, { thinkingConfig: { thinkingLevel: 'low' } });
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
-      return { res, data: await res.json() };
+      // 呼び出し元の中止（signal）と、時間切れの両方で止められるようにする
+      const ctl = new AbortController();
+      const onAbort = () => ctl.abort();
+      if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
+      let timedOut = false;
+      const tm = setTimeout(() => { timedOut = true; ctl.abort(); }, GEMINI_TIMEOUT_MS);
+      try {
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal });
+        return { res, data: await res.json() };
+      } catch (e) {
+        if (timedOut && !(signal && signal.aborted)) throw new Error('AIの応答に時間がかかりすぎたため、やり直します');
+        throw e;
+      } finally {
+        clearTimeout(tm);
+        if (signal) signal.removeEventListener('abort', onAbort);
+      }
     };
     let r = await send(geminiThinkingOk);
     if (!r.res.ok && r.res.status === 400 && geminiThinkingOk && /think/i.test(JSON.stringify(r.data && r.data.error || {}))) {
@@ -3420,6 +3435,7 @@
   const AI_JSON_FORMAT = `{"questions": [{"theme": "取り上げたテーマ名", "question": "問題文", "options": ["選択肢の文章1", "選択肢の文章2", "選択肢の文章3", "選択肢の文章4", "選択肢の文章5"], "correct_option": "正解の選択肢の文章（optionsの中のものと一字一句同じ）", "answer": 0, "explanation": "解説"}]}
 ・options は必ず5つにし、先頭に ①・1. などの番号は付けないこと。
 ・answer は正解の番号で、最初の選択肢を 0 とする 0〜4 の整数にすること。
+・出力は簡潔にすること。問題文は必要最小限の長さにし、explanation は正解の根拠と主な誤りの要点を、全体で250字以内にまとめる。
 ・過去問の問題文・選択肢を、そのまま、または語句を少し変えただけで出題してはならない。出題例はテーマ・難易度・形式の参考にとどめ、題材・状況設定・数値・選択肢の組立てを新しく考えた「完全なオリジナル問題」にすること。
 ・数式・数値・単位つきの式は、選択肢の中も含めて、必ず $...$ で囲んだLaTeXで書くこと（例: $35.4\\,\\%$）。$ で囲まずに \\text{ } や \\frac{ } だけを書かないこと。
 ・単位の角括弧は [%] のように普通の文字で書き、\\[ \\] は数式の表示以外に使わないこと。`;
@@ -3450,13 +3466,20 @@
   }
 
   // 生成中は「問題の表示」と下のボタン（中断／次へ）を隠し、「生成をやめる」だけを出す
+  let aiElapsedTimer = null;
   function showAiLoading() {
     document.getElementById('ai-loading').style.display = 'block';
+    // 経過時間を表示する（待ち時間が分かるように）
+    const t0 = Date.now();
+    clearInterval(aiElapsedTimer);
+    const el = document.getElementById('ai-elapsed');
+    if (el) { el.textContent = '経過 0:00'; aiElapsedTimer = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); el.textContent = `経過 ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }, 1000); }
     document.getElementById('bookmark-btn').style.display = 'none';
     const controls = document.querySelector('#screen-quiz .controls');
     if (controls) controls.style.display = 'none';
   }
   function hideAiLoading() {
+    clearInterval(aiElapsedTimer);
     document.getElementById('ai-loading').style.display = 'none';
     document.getElementById('bookmark-btn').style.display = '';
     const controls = document.querySelector('#screen-quiz .controls');
@@ -3708,7 +3731,7 @@
           });
           return idx;
         };
-        for (let attempt = 0; attempt < 2; attempt++) {
+        for (let attempt = 0; attempt < 1; attempt++) {
           const dupIdx = findSimilar();
           if (dupIdx.length === 0) break;
           throwIfCancelled(job);
@@ -4292,8 +4315,9 @@ ${AI_JSON_FORMAT}
 
     let targetForRef = (genre === "all") ? allQuestions : currentTargetQuestions;
     let refQuestions = targetForRef.map(q => q.question);
-    if (refQuestions.length > 150) {
-        refQuestions = refQuestions.sort(() => 0.5 - Math.random()).slice(0, 150);
+    if (refQuestions.length > 30) {
+        // 入力が長いほど応答が遅くなるため、参考にする過去問は30問に絞る
+        refQuestions = refQuestions.sort(() => 0.5 - Math.random()).slice(0, 30).map(q => String(q).slice(0, 220));
     }
     const refText = refQuestions.map(q => `・${q}`).join('\n');
 
@@ -4326,7 +4350,14 @@ ${AI_JSON_FORMAT}`;
       }
     };
 
-    const { res: response, data: result } = await geminiPost(modelName, apiKey, payload, signal);
+    let response, result;
+    try {
+      ({ res: response, data: result } = await geminiPost(modelName, apiKey, payload, signal));
+    } catch (e) {
+      // 応答が遅すぎたときは、1回だけ自動でやり直す
+      if (/時間がかかりすぎた/.test(e.message) && attempt < 1) return requestPracticeAI(useLiteModel, signal, attempt + 1);
+      throw e;
+    }
     if (!response.ok) {
       if ((response.status === 429 || response.status === 503) && !useLiteModel) {
         console.warn(`API制限または高負荷(${response.status})を検知。Liteモデルで再試行します...`);
