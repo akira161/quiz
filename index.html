@@ -3423,8 +3423,8 @@
       { genre: "廃棄物管理", ai: 7, past: 2 }
     ]
   };
-  const AI_BATCH_SIZE = 3;       // 1回に作らせる問題数（少ないほど1回の応答が速い）
-  const MOCK_CONCURRENCY = 5;    // 同時に作らせる数（混雑したら自動で1に絞る）   // 腕試し用のAI問題を同時に作る数
+  const AI_BATCH_SIZE = 4;       // 1回に作らせる問題数（呼び出し回数が少ないほど、利用制限に当たりにくい）
+  const MOCK_CONCURRENCY = 4;    // 同時に作らせる数（利用制限を受けたら自動で減らす）   // 腕試し用のAI問題を同時に作る数
 
   // Geminiの呼び出し。思考を浅くして速くする（対応していないモデルなら自動で外して再送する）
   let geminiThinkingOk = true;
@@ -3473,7 +3473,23 @@
   // AIが答えたが、使える問題が1つもなかった（通信や認証のエラーとは区別する）
   class AiNoUsable extends Error { constructor(msg) { super(msg); this.name = 'AiNoUsable'; } }
   // APIが混雑・利用制限（429/503）で、待っても応答が得られなかった
-  class AiBusy extends Error { constructor(msg) { super(msg); this.name = 'AiBusy'; } }
+  class AiBusy extends Error { constructor(msg, waitMs) { super(msg); this.name = 'AiBusy'; this.waitMs = waitMs || 0; } }
+  // 利用制限（429）を受けたら、全ての生成をその時間だけ一斉に止める（個別に再送して制限を叩き続けない）
+  let aiPauseUntil = 0;
+  function retryDelayMs(res, data) {
+    let ms = 0;
+    try {
+      const details = (data && data.error && data.error.details) || [];
+      const ri = details.find(d => d && d.retryDelay);
+      if (ri) ms = parseFloat(String(ri.retryDelay)) * 1000;
+    } catch (e) {}
+    if (!(ms > 0)) ms = res.status === 429 ? 12000 : 4000;
+    return Math.min(65000, ms + 500);
+  }
+  async function waitAiPause(job) {
+    const ms = aiPauseUntil - Date.now();
+    if (ms > 0) { await aiSleep(job, ms); throwIfCancelled(job); }
+  }
   let currentAiJob = null;
 
   function startAiJob(kind) {
@@ -3717,7 +3733,11 @@
       document.getElementById('ai-progress-bar').style.width = `${percent}%`;
     };
 
+    let limit = MOCK_CONCURRENCY;   // 同時に作る数（利用制限を受けたら減らす）
+    let lastThrottle = 0;
     const retryCallback = (retriesLeft, isLite) => {
+      // 利用制限を受けたら、同時に作る数を半分に減らす（20秒に1回まで）
+      if (Date.now() - lastThrottle > 20000) { lastThrottle = Date.now(); limit = Math.max(1, Math.ceil(limit / 2)); }
       if (job.aborted || quiet) return;
       const modelName = isLite ? "軽量(Lite)モデル" : "標準モデル";
       document.getElementById('ai-progress-text').textContent = `API混雑中... 再試行(${modelName})`;
@@ -3742,7 +3762,7 @@
       });
 
       // 2) 同時に最大 MOCK_CONCURRENCY 件ずつ、並行してAIに作らせる
-      let failed = false, nextTask = 0, doneTasks = 0, active = 0, limit = MOCK_CONCURRENCY, gotAny = false, lastBusy = null;
+      let failed = false, nextTask = 0, doneTasks = 0, active = 0, gotAny = false, lastBusy = null;
       const runTask = async (t) => {
         throwIfCancelled(job);
         let batch;
@@ -3891,17 +3911,21 @@ ${AI_JSON_FORMAT}
     while (retries >= 0) {
       try {
         throwIfCancelled(job);
+        await waitAiPause(job);
         const { res, data } = await geminiPost(modelName, apiKey, payload, job ? job.controller.signal : undefined);
         throwIfCancelled(job);
         
         if (!res.ok) {
            if (res.status === 429 || res.status === 503) {
-               if (!useLiteModel) {
+               // 503（モデルが混雑）は軽量モデルへ切り替える。429（利用制限）は切り替えても同じ制限なので、指定された時間だけ待つ
+               if (res.status === 503 && !useLiteModel) {
                    console.warn(`API Busy (${res.status}). Switching to Lite model for this batch.`);
                    if (onRetry) onRetry(retries, true);
                    return fetchMockAIBatch(genre, count, apiKey, true, previousQuestionsText, onRetry, seeds, job); 
                }
-               throw new AiBusy(`APIが混雑しています（${res.status}）`);
+               const wait = retryDelayMs(res, data);
+               aiPauseUntil = Math.max(aiPauseUntil, Date.now() + wait);
+               throw new AiBusy(`APIが混雑しています（${res.status}）`, wait);
            }
            throw new Error(data.error?.message || "Unknown API Error");
         }
@@ -3935,10 +3959,11 @@ ${AI_JSON_FORMAT}
       } catch (e) {
         if (e instanceof AiCancelled || e.name === 'AbortError' || (job && job.aborted)) throw new AiCancelled();
         if (e instanceof AiBusy) {
-          // 混雑・利用制限のときは、間隔をあけながら待って再試行する（5秒→10秒→20秒）
-          if (++busyTries > (job && job.maxBusy != null ? job.maxBusy : 3)) throw e;
+          // 混雑・利用制限のときは、APIが指定した時間だけ（全体で）待って再試行する
+          if (++busyTries > (job && job.maxBusy != null ? job.maxBusy : 4)) throw e;
           if (onRetry) onRetry(retries, useLiteModel);
-          await aiSleep(job, Math.min(30000, 5000 * Math.pow(2, busyTries - 1)) + Math.random() * 1500);
+          await waitAiPause(job);
+          await aiSleep(job, Math.random() * 1500);   // 再開の時刻をずらす
           throwIfCancelled(job);
           continue;
         }
@@ -4438,15 +4463,17 @@ ${AI_JSON_FORMAT}`;
       throw e;
     }
     if (!response.ok) {
-      if ((response.status === 429 || response.status === 503) && !useLiteModel) {
-        console.warn(`API制限または高負荷(${response.status})を検知。Liteモデルで再試行します...`);
+      if (response.status === 503 && !useLiteModel) {
+        console.warn(`高負荷(${response.status})を検知。Liteモデルで再試行します...`);
         return requestPracticeAI(true, signal, attempt);
       }
-      if ((response.status === 429 || response.status === 503) && attempt < 2) {
-        // 混雑・利用制限: 少し待ってからもう一度（6秒→12秒）
-        await new Promise(resolve => { const tm = setTimeout(resolve, 6000 * (attempt + 1)); if (signal) signal.addEventListener('abort', () => { clearTimeout(tm); resolve(); }, { once: true }); });
+      if ((response.status === 429 || response.status === 503) && attempt < 3) {
+        // 利用制限・混雑: APIが指定した時間だけ待ってから、もう一度
+        const wait = retryDelayMs(response, result);
+        aiPauseUntil = Math.max(aiPauseUntil, Date.now() + wait);
+        await new Promise(resolve => { const tm = setTimeout(resolve, wait); if (signal) signal.addEventListener('abort', () => { clearTimeout(tm); resolve(); }, { once: true }); });
         if (signal && signal.aborted) throw new AiCancelled();
-        return requestPracticeAI(true, signal, attempt + 1);
+        return requestPracticeAI(useLiteModel, signal, attempt + 1);
       }
       throw new Error(`[${response.status}] ${result.error?.message || "通信エラー"}`);
     }
