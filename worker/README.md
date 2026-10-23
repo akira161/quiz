@@ -21,6 +21,7 @@
    | `NOTION_TOKEN` | シークレット | 手順1のシークレット |
    | `SYNC_KEY` | シークレット | 自分で決める長いランダム文字列（例: `openssl rand -hex 24` の出力） |
    | `NOTION_DATABASE_ID` | 変数 | データベースのID（データベースのURLの末尾32文字） |
+   | `NOTION_MISTAKES_DATABASE_ID` | 変数 | 「間違えた問題」データベースのID（使う場合のみ。`wrangler.toml` に記載済み） |
    | `ALLOWED_ORIGIN` | 変数 | `https://akira161.github.io` |
 4. WorkerのURL（`https://〇〇.△△.workers.dev`）を控える。
 
@@ -39,3 +40,6 @@ wranglerを使う場合は、このフォルダで `npx wrangler secret put NOTI
 - `SYNC_KEY` を知らない人はWorkerを使えません。キーはこの端末のブラウザにだけ保存され、バックアップファイルには含まれません。
 - Cloudflare Workersの無料枠（1日10万リクエスト）で十分に収まります。Notion APIは毎秒約3件の制限があり、Workerが自動で間隔をあけます。
 - 1回の同期で送る件数は20件ずつです（多い場合は自動で分割）。
+
+## 間違えた問題の反映
+「間違えた問題（技術士一次試験）」データベースにも、同じインテグレーションを「接続」してください。アプリの設定で「間違えた問題も反映する」をオンにすると、ブックマークと同じ仕組みで、間違えた問題（回数・状況・最後に間違えた日・あなたの回答など）が自動で反映されます。

@@ -629,6 +629,8 @@
       <button id="start-mock-btn" class="mode-card mock" onclick="openMockSetup()"><b>🏆 腕試し</b><span>本番形式・時間制限</span></button>
       <button id="mock-history-btn" class="mode-card" onclick="openMockHistory()"><b>📊 腕試し履歴</b><span>過去の結果を見る</span></button>
       <button id="bookmark-open-btn" class="mode-card" onclick="openBookmarks()"><b>★ ブックマーク</b><span>見返す・解く</span></button>
+      <button id="mistake-open-btn" class="mode-card" onclick="openMistakes()"><b>❌ 間違えた問題</b><span>一覧・克服するまで解く</span></button>
+      <a class="mode-card" href="guide.html" style="text-decoration:none;color:inherit;"><b>📋 学習ガイド</b><span>出題範囲・学習の優先順</span></a>
     </div>
 
     <details class="fold" id="settings-details">
@@ -668,6 +670,7 @@
           <input type="url" id="notion-url" class="filter-input" placeholder="WorkerのURL（https://…workers.dev）" style="margin-bottom: 8px;">
           <input type="password" id="notion-key" class="filter-input" placeholder="同期キー（Workerに登録した合言葉）" style="margin-bottom: 8px;">
           <label style="display:flex;gap:8px;align-items:center;font-weight:normal;margin-bottom:6px;"><input type="checkbox" id="notion-enabled"> 自動で反映する</label>
+          <label style="display:flex;gap:8px;align-items:center;font-weight:normal;margin-bottom:6px;"><input type="checkbox" id="notion-mistakes"> 間違えた問題も反映する（Worker側の追加設定が必要）</label>
           <label style="display:flex;gap:8px;align-items:center;font-weight:normal;margin-bottom:8px;"><input type="checkbox" id="notion-delete"> ブックマークを外したら、Notionのページもゴミ箱へ移す</label>
           <div style="display: flex; gap: 8px;">
             <button class="nav-btn secondary" onclick="saveNotionSettings()" style="flex: 1; padding: 12px; font-size: 0.9rem;">保存</button>
@@ -861,6 +864,45 @@
     <button class="nav-btn secondary" onclick="goToStart()" style="margin-top: 12px;">設定画面に戻る</button>
   </div>
 
+  <div id="screen-mistakes" class="screen">
+    <h2>❌ 間違えた問題</h2>
+    <div id="mis-subject-tabs" class="subject-tabs">
+      <button class="subject-tab" data-key="senmon" onclick="setMistakeSubject('senmon')">専門</button>
+      <button class="subject-tab" data-key="kiso" onclick="setMistakeSubject('kiso')">基礎</button>
+      <button class="subject-tab" data-key="tekisei" onclick="setMistakeSubject('tekisei')">適性</button>
+    </div>
+    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5;">
+      過去問演習・腕試しで間違えた問題が自動で入ります。<b>その後2回連続で正解すると「克服済み」</b>になります。間違えるたびに回数が増えます。
+    </div>
+    <div class="chips" id="mis-status-chips" style="margin-bottom: 8px;">
+      <button class="chip" data-st="open" onclick="setMisFilter('open')">未克服</button>
+      <button class="chip" data-st="cleared" onclick="setMisFilter('cleared')">克服済み</button>
+      <button class="chip" data-st="all" onclick="setMisFilter('all')">すべて</button>
+    </div>
+    <input type="search" id="mis-search" class="filter-input" placeholder="問題文を検索" oninput="setMisQuery(this.value)" style="margin-bottom: 12px;">
+    <div class="filter-group" style="margin-bottom: 12px;">
+      <label for="mis-order">並び順（一覧・出題）</label>
+      <select id="mis-order" class="filter-select" onchange="renderMistakes()">
+        <option value="count">間違えた回数の多い順</option>
+        <option value="recent">最近間違えた順</option>
+        <option value="original">年度・番号順</option>
+        <option value="random">ランダム</option>
+      </select>
+    </div>
+    <button id="mis-start-btn" class="nav-btn" onclick="startMistakeQuiz()">間違えた問題を解く</button>
+    <div id="mis-list" style="margin-top: 20px;"></div>
+    <details class="fold" style="margin-top: 16px;">
+      <summary>📤 Notion・ファイルに書き出す</summary>
+      <div class="fold-body">
+        <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 10px;">ブックマークと同じ方法で、Notionに取り込めます（設定でNotion自動反映を使っている場合は、自動でも反映できます）。表示中の科目・絞り込み条件の問題を書き出します。</div>
+        <button class="nav-btn" onclick="exportMistakes('csv')" style="margin-bottom: 8px;">📄 Notion用CSVを保存</button>
+        <button class="nav-btn" onclick="exportMistakes('md-copy')" style="margin-bottom: 8px;">📋 Markdownをコピー（Notionに貼り付け）</button>
+        <button class="nav-btn secondary" onclick="exportMistakes('md')">⬇ Markdownファイルを保存</button>
+      </div>
+    </details>
+    <button class="nav-btn secondary" onclick="goToStart()" style="margin-top: 12px;">設定画面に戻る</button>
+  </div>
+
   <div id="note-modal" class="note-modal" onclick="if(event.target === this) closeNoteModal()">
     <div class="note-modal-panel">
       <div class="note-modal-head">
@@ -966,6 +1008,7 @@
     statsBy: {},
     history: {},
     mockExams: [],
+    mistakes: {},      // 間違えた問題: 問題ID → { subject, n(間違えた回数), t(最後に間違えた時刻), streak(その後の連続正解), cleared(克服済み), pick(最後に選んだ番号) }
     bookmarks: {},     // ブックマーク: 問題ID → { subject, t, date, snap(AI生成問題だけ問題の内容を保存) }
     mockSeen: {},      // 科目ごとの、直近の腕試しで出た過去問のID（次回は出にくくする）
     mockThemes: {},    // 科目ごとの、直近の腕試しでAIが扱ったテーマ（次回は避ける）
@@ -978,6 +1021,22 @@
     return userMemory.statsBy[key];
   }
 
+  function subjectOfId(id) { return String(id).startsWith('kiso:') ? 'kiso' : String(id).startsWith('tekisei:') ? 'tekisei' : 'senmon'; }
+  // 間違えた問題リストの更新（間違い→未克服に追加、その後2回連続で正解→克服済み）
+  function recordMistake(q, isCorrect, pickIdx) {
+    if (!q || isAiQuestion(q)) return;
+    userMemory.mistakes = userMemory.mistakes || {};
+    let m = userMemory.mistakes[q.id];
+    if (!isCorrect) {
+      if (!m) m = userMemory.mistakes[q.id] = { subject: q.subject || subjectOfId(q.id), n: 0, t: 0, streak: 0, cleared: false };
+      m.n++; m.t = Date.now(); m.streak = 0; m.cleared = false; m.pick = pickIdx;
+      scheduleNotionSync();
+    } else if (m && !m.cleared) {
+      m.streak = (m.streak || 0) + 1;
+      if (m.streak >= 2) { m.cleared = true; showToast('🎉 間違えた問題を克服しました'); }
+      scheduleNotionSync();
+    }
+  }
   function bumpStats(isCorrect) {
     const s = statsOf(currentSubject);
     s.total++;
@@ -1197,6 +1256,7 @@
       userMemory.stats = { total: 0, correct: 0 };
       userMemory.statsBy = {};
       userMemory.history = {};
+      userMemory.mistakes = {};
       saveUserData();
       updateMemoryUI(); 
       updateFilterUI(); 
@@ -1215,6 +1275,13 @@
         if (!userMemory.mockSeen) userMemory.mockSeen = {};
         if (!userMemory.bookmarks) userMemory.bookmarks = {};
         if (!userMemory.prefs) userMemory.prefs = {};
+        if (!userMemory.mistakes) {
+          // 以前の学習記録から「いま間違えたままの問題」を引き継ぐ（日時は不明）
+          userMemory.mistakes = {};
+          Object.entries(userMemory.history || {}).forEach(([id, h]) => {
+            if (h && h.w > 0) userMemory.mistakes[id] = { subject: subjectOfId(id), n: h.w, t: 0, streak: 0, cleared: false };
+          });
+        }
         if (!userMemory.mockThemes) userMemory.mockThemes = {};
         // 旧形式の通算成績（専門科目のみ）を科目別に引き継ぐ
         if (!userMemory.statsBy) {
@@ -1972,6 +2039,7 @@
   };
 
   function updateBookmarkOpenButton() {
+    updateMistakeOpenButton();
     const btn = document.getElementById('bookmark-open-btn');
     if (btn) btn.innerHTML = `<b>★ ブックマーク（${bookmarkCount(currentSubject)}）</b><span>見返す・解く</span>`;
   }
@@ -2221,6 +2289,8 @@
         // ブックマーク: 登録の新しい方（ステータス・メモも一緒に）
         userMemory.bookmarks = userMemory.bookmarks || {};
         Object.entries(m.bookmarks || {}).forEach(([id, e]) => { const cur = userMemory.bookmarks[id]; if (!cur || (e.t || 0) > (cur.t || 0)) userMemory.bookmarks[id] = e; });
+        userMemory.mistakes = userMemory.mistakes || {};
+        Object.entries(m.mistakes || {}).forEach(([id, e]) => { const cur = userMemory.mistakes[id]; if (!cur) userMemory.mistakes[id] = e; else { cur.n = Math.max(cur.n || 0, e.n || 0); if ((e.t || 0) > (cur.t || 0)) { cur.t = e.t; cur.streak = e.streak; cur.cleared = e.cleared; cur.pick = e.pick; } } });
         // 学習記録: 回数の多い方
         userMemory.history = userMemory.history || {};
         Object.entries(m.history || {}).forEach(([id, h]) => { const cur = userMemory.history[id]; if (!cur) userMemory.history[id] = h; else { cur.c = Math.max(cur.c || 0, h.c || 0); cur.w = Math.max(cur.w || 0, h.w || 0); } });
@@ -2245,7 +2315,7 @@
 
   // --- Notionへの自動反映（Cloudflare Workers の中継サーバー経由。設定は worker/README.md） ---
   const NOTION_SYNC_KEY = 'notion_sync';
-  let notionCfg = { url: '', key: '', enabled: false, deleteOnRemove: false, removed: [], last: '', error: '' };
+  let notionCfg = { url: '', key: '', enabled: false, deleteOnRemove: false, mistakes: false, removed: [], removedM: [], last: '', error: '' };
   let notionBusy = false, notionTimer = null;
 
   function loadNotionCfg() {
@@ -2256,6 +2326,7 @@
     el('notion-key').value = notionCfg.key || '';
     el('notion-enabled').checked = !!notionCfg.enabled;
     el('notion-delete').checked = !!notionCfg.deleteOnRemove;
+    el('notion-mistakes').checked = !!notionCfg.mistakes;
     renderNotionStatus();
   }
   function saveNotionCfg() { try { localStorage.setItem(NOTION_SYNC_KEY, JSON.stringify(notionCfg)); } catch (e) {} }
@@ -2273,7 +2344,8 @@
     notionCfg.enabled = document.getElementById('notion-enabled').checked && !!(u && notionCfg.key);
     document.getElementById('notion-enabled').checked = notionCfg.enabled;
     notionCfg.deleteOnRemove = document.getElementById('notion-delete').checked;
-    if (!notionCfg.deleteOnRemove) notionCfg.removed = [];
+    notionCfg.mistakes = document.getElementById('notion-mistakes').checked;
+    if (!notionCfg.deleteOnRemove) { notionCfg.removed = []; notionCfg.removedM = []; }
     notionCfg.error = '';
     saveNotionCfg();
     renderNotionStatus();
@@ -2292,7 +2364,7 @@
     try {
       const d = await notionFetch('/health');
       notionCfg.error = ''; saveNotionCfg();
-      renderNotionStatus(`✅ 接続できました（データベース: ${d.database}）`);
+      renderNotionStatus(`✅ 接続できました（ブックマーク: ${d.database}${d.mistakes ? ` ／ 間違えた問題: ${d.mistakes}` : notionCfg.mistakes ? ' ／ ⚠️ 間違えた問題のデータベースがWorkerに未設定' : ''}）`);
     } catch (e) {
       notionCfg.error = `接続できません: ${e.message}`; saveNotionCfg(); renderNotionStatus();
     }
@@ -2301,6 +2373,13 @@
   function noteBookmarkRemoved(id) {
     if (!notionCfg.enabled || !notionCfg.deleteOnRemove) { scheduleNotionSync(); return; }
     if (!notionCfg.removed.includes(id)) notionCfg.removed.push(id);
+    saveNotionCfg();
+    scheduleNotionSync();
+  }
+  function noteMistakeRemoved(id) {
+    if (!notionCfg.enabled || !notionCfg.mistakes || !notionCfg.deleteOnRemove) { scheduleNotionSync(); return; }
+    notionCfg.removedM = notionCfg.removedM || [];
+    if (!notionCfg.removedM.includes(id)) notionCfg.removedM.push(id);
     saveNotionCfg();
     scheduleNotionSync();
   }
@@ -2315,15 +2394,19 @@
     clearTimeout(notionTimer);
     notionTimer = setTimeout(() => runNotionSync(), delay);
   };
-  async function runNotionSync(force) {
-    if (!notionCfg.enabled || notionBusy) return;
-    if (navigator.onLine === false) return;
-    notionBusy = true;
-    try {
-      renderNotionStatus('Notionに反映中...');
-      // 変更のあるブックマークだけを集める
-      const todo = [];
-      for (const sub of Object.keys(SUBJECTS)) {
+  // 1つの送り先（ブックマーク／間違えた問題）について、変更のある行だけをWorkerへ送る。戻り値: { sent, failed, lastErr, pending }
+  async function syncTarget(target, force) {
+    const isMis = target === 'mistakes';
+    const todo = [];
+    for (const sub of Object.keys(SUBJECTS)) {
+      if (isMis) {
+        if (!misEntries(sub).length) continue;
+        for (const it of await resolveMistakes(sub)) {
+          const row = mistakeRow(sub, it.id, it.m, it.q);
+          const h = rowHash(row);
+          if (force || it.m.sync !== h) todo.push({ row, h, entry: it.m });
+        }
+      } else {
         if (!bookmarkCount(sub)) continue;
         for (const it of await resolveBookmarks(sub)) {
           if (!it.q) continue;
@@ -2332,23 +2415,39 @@
           if (force || it.entry.sync !== h) todo.push({ row, h, entry: it.entry });
         }
       }
-      const removed = notionCfg.removed.slice();
-      let sent = 0, failed = 0, lastErr = '';
-      for (let i = 0; i < todo.length || (i === 0 && removed.length); i += 20) {
-        const chunk = todo.slice(i, i + 20);
-        const rem = i === 0 ? removed : [];
-        const d = await notionFetch('/sync', { method: 'POST', body: JSON.stringify({ items: chunk.map(c => c.row), removed: rem }) });
-        const okIds = new Set(d.done || []);
-        chunk.forEach(c => { if (okIds.has(c.row.id)) { c.entry.sync = c.h; sent++; } });
-        (d.failed || []).forEach(f => { failed++; lastErr = f.error; });
-        if (rem.length) notionCfg.removed = notionCfg.removed.filter(id => !(d.done || []).includes(id));
-        saveUserData(); saveNotionCfg();
-        if (!todo.length) break;
-      }
+    }
+    const key = isMis ? 'removedM' : 'removed';
+    notionCfg[key] = notionCfg[key] || [];
+    const removed = notionCfg[key].slice();
+    let sent = 0, failed = 0, lastErr = '';
+    for (let i = 0; i < todo.length || (i === 0 && removed.length); i += 20) {
+      const chunk = todo.slice(i, i + 20);
+      const rem = i === 0 ? removed : [];
+      const d = await notionFetch('/sync', { method: 'POST', body: JSON.stringify({ target, items: chunk.map(c => c.row), removed: rem }) });
+      const okIds = new Set(d.done || []);
+      chunk.forEach(c => { if (okIds.has(c.row.id)) { c.entry.sync = c.h; sent++; } });
+      (d.failed || []).forEach(f => { failed++; lastErr = f.error; });
+      if (rem.length) notionCfg[key] = notionCfg[key].filter(id => !(d.done || []).includes(id));
+      saveUserData(); saveNotionCfg();
+      if (!todo.length) break;
+    }
+    return { sent, failed, lastErr, removed: removed.length };
+  }
+  async function runNotionSync(force) {
+    if (!notionCfg.enabled || notionBusy) return;
+    if (navigator.onLine === false) return;
+    notionBusy = true;
+    try {
+      renderNotionStatus('Notionに反映中...');
+      const results = [await syncTarget('bookmarks', force)];
+      if (notionCfg.mistakes) results.push(await syncTarget('mistakes', force));
+      const failed = results.reduce((t, r) => t + r.failed, 0);
+      const lastErr = (results.find(r => r.failed) || {}).lastErr || '';
+      const sent = results.reduce((t, r) => t + r.sent + r.removed, 0);
       notionCfg.error = failed ? `${failed}件を反映できませんでした（${lastErr}）。あとで自動で再試行します` : '';
       if (!failed) notionCfg.last = nowLabel();
       saveNotionCfg();
-      renderNotionStatus(!failed && sent === 0 && removed.length === 0 && !force ? `最終同期: ${notionCfg.last || nowLabel()}（変更なし）` : undefined);
+      renderNotionStatus(!failed && sent === 0 && !force ? `最終同期: ${notionCfg.last || nowLabel()}（変更なし）` : undefined);
       if (failed) scheduleNotionSync(60000);
     } catch (e) {
       notionCfg.error = `同期できませんでした: ${e.message}`;
@@ -2365,6 +2464,158 @@
     showToast(notionCfg.error ? 'Notionへの反映に失敗しました' : 'Notionに反映しました');
   };
   window.addEventListener('online', () => scheduleNotionSync(1000));
+
+
+  // --- 間違えた問題リスト ---
+  let misSubject = 'senmon', misFilter = 'open', misQuery = '';
+  const misEntries = sub => Object.entries(userMemory.mistakes || {}).filter(([, m]) => m.subject === sub);
+  const misOpenCount = sub => misEntries(sub).filter(([, m]) => !m.cleared).length;
+  function updateMistakeOpenButton() {
+    const btn = document.getElementById('mistake-open-btn');
+    if (btn) btn.innerHTML = `<b>❌ 間違えた問題（${misOpenCount(currentSubject)}）</b><span>一覧・克服するまで解く</span>`;
+  }
+  window.openMistakes = function(key) {
+    misSubject = SUBJECTS[key] ? key : currentSubject;
+    switchScreen('screen-mistakes');
+    window.scrollTo(0, 0);
+    renderMistakes();
+  };
+  window.setMistakeSubject = function(k) { misSubject = k; renderMistakes(); };
+  window.setMisFilter = function(f) { misFilter = f; renderMistakes(); };
+  window.setMisQuery = function(v) { misQuery = String(v || '').trim(); clearTimeout(window.__misT); window.__misT = setTimeout(renderMistakes, 200); };
+
+  async function resolveMistakes(subject) {
+    const entries = misEntries(subject);
+    if (entries.length) {
+      const qs = await loadSubjectQuestions(subject);
+      if (!bookmarkIndexCache[subject] || bookmarkIndexCache[subject].size !== qs.length) bookmarkIndexCache[subject] = new Map(qs.map(q => [q.id, q]));
+    }
+    const idx = bookmarkIndexCache[subject] || new Map();
+    return entries.map(([id, m]) => ({ id, m, q: idx.get(id) || null })).filter(it => it.q);
+  }
+  function misMatches(it) {
+    if (misFilter === 'open' && it.m.cleared) return false;
+    if (misFilter === 'cleared' && !it.m.cleared) return false;
+    if (misQuery) {
+      const t = [it.q.question, ...it.q.options, it.q.genre, it.q.subgenre, it.q.topic, it.q.year].join(' ').toLowerCase();
+      if (!t.includes(misQuery.toLowerCase())) return false;
+    }
+    return true;
+  }
+  function misSort(items, order) {
+    if (order === 'count') items.sort((a, b) => b.m.n - a.m.n || (b.m.t || 0) - (a.m.t || 0));
+    else if (order === 'recent') items.sort((a, b) => (b.m.t || 0) - (a.m.t || 0));
+    else if (order === 'original') items.sort((a, b) => (a.q.yearNum || 0) - (b.q.yearNum || 0) || slotOrder(a.q) - slotOrder(b.q));
+    else shuffleArray(items);
+    return items;
+  }
+  const misDate = m => m.t ? isoDate(m.t) : '日付不明';
+
+  window.renderMistakes = async function() {
+    document.querySelectorAll('#mis-subject-tabs .subject-tab').forEach(btn => {
+      const k = btn.dataset.key;
+      btn.textContent = `${SUBJECTS[k].short}（${misOpenCount(k)}）`;
+      btn.classList.toggle('active', k === misSubject);
+    });
+    const listEl = document.getElementById('mis-list'), startBtn = document.getElementById('mis-start-btn');
+    const subject = misSubject;
+    listEl.innerHTML = '<div class="empty-msg">読み込み中...</div>';
+    let all;
+    try { all = await resolveMistakes(subject); }
+    catch (e) { listEl.innerHTML = `<div class="empty-msg">問題データを読み込めませんでした。<br>${escapeHtml(e.message)}</div>`; return; }
+    if (subject !== misSubject) return;
+    const counts = { open: all.filter(i => !i.m.cleared).length, cleared: all.filter(i => i.m.cleared).length, all: all.length };
+    document.querySelectorAll('#mis-status-chips .chip').forEach(c => {
+      const k = c.dataset.st;
+      c.textContent = `${k === 'open' ? '未克服' : k === 'cleared' ? '克服済み' : 'すべて'}（${counts[k]}）`;
+      c.classList.toggle('on', misFilter === k);
+    });
+    const shown = misSort(all.filter(misMatches), document.getElementById('mis-order').value);
+    startBtn.disabled = shown.length === 0;
+    startBtn.textContent = shown.length ? `${misFilter === 'open' && !misQuery ? '未克服の' : '表示中の'}問題を解く（${shown.length}問）` : '対象の問題がありません';
+    if (all.length === 0) { listEl.innerHTML = '<div class="empty-msg" style="padding: 32px 12px;">間違えた問題はまだありません。<br>問題を解いて間違えると、ここに自動で入ります。</div>'; return; }
+    if (shown.length === 0) { listEl.innerHTML = `<div class="empty-msg" style="padding: 32px 12px;">${misFilter === 'open' && !misQuery ? '未克服の問題はありません 🎉' : '条件に一致する問題がありません。'}</div>`; return; }
+    listEl.innerHTML = '';
+    shown.forEach(({ id, m, q }) => {
+      const card = document.createElement('div');
+      card.className = 'bm-card';
+      card.style.borderLeftColor = m.cleared ? 'var(--success-text)' : 'var(--danger-btn)';
+      const meta = [q.year, q.qNum, q.genre].filter(Boolean).join('　');
+      const correct = correctIndexes(q);
+      const opts = q.options.map((o, i) => `<div class="bm-opt ${correct.includes(i) ? 'correct' : ''}" ${i === m.pick && !correct.includes(i) ? 'style="border-color:var(--danger-text);color:var(--danger-text);"' : ''}>${optionHtml(q, i, o)}${i === m.pick && !correct.includes(i) ? ' 　← あなたの回答' : ''}</div>`).join('');
+      const img = q.imageUrl ? `<div style="text-align:center; margin: 8px 0;"><a href="${q.imageUrl}" target="_blank" rel="noopener"><img loading="lazy" src="${q.imageUrl}" alt="問題の原本画像" class="question-image" style="margin-bottom:0;" onerror="this.parentElement.style.display='none';"></a></div>` : '';
+      const prog = m.cleared ? '✅ 克服済み' : `連続正解 ${m.streak || 0}/2`;
+      card.innerHTML = `<div class="bm-head"><span>${escapeHtml(meta)}<br><span style="font-weight:normal;">間違えた回数 <b style="color:var(--danger-text);">${m.n}</b> 回 ／ 最後: ${escapeHtml(misDate(m))} ／ ${prog}</span></span><span style="display:flex;align-items:center;gap:6px;"><button class="bookmark-btn ${isBookmarked(id) ? 'on' : ''}" title="ブックマーク">${isBookmarked(id) ? '★' : '☆'}</button></span></div>
+        <div class="bm-q md-content">${richText(q, q.question)}</div>
+        <details><summary>答えと解説を見る</summary>${img}${opts}<div style="margin: 8px 0; font-weight: bold; font-size: 0.9rem;">正解: ${escapeHtml(correctLabel(q))}</div><div class="md-content">${DOMPurify.sanitize(markedWithMath(String(q.explanation || '')))}</div></details>
+        <div style="display:flex;gap:8px;margin-top:8px;"><button class="chip mis-toggle">${m.cleared ? '未克服に戻す' : '克服済みにする'}</button><button class="chip mis-del">リストから外す</button></div>`;
+      card.querySelector('.bookmark-btn').onclick = () => { toggleBookmark(q); renderMistakes(); updateBookmarkOpenButton(); };
+      card.querySelector('.mis-toggle').onclick = () => { m.cleared = !m.cleared; m.streak = m.cleared ? 2 : 0; saveUserData(); scheduleNotionSync(); updateMistakeOpenButton(); renderMistakes(); };
+      card.querySelector('.mis-del').onclick = () => { delete userMemory.mistakes[id]; noteMistakeRemoved(id); saveUserData(); updateMistakeOpenButton(); renderMistakes(); };
+      listEl.appendChild(card);
+    });
+    if (window.MathJax) typesetMath([listEl]).catch(err => console.error(err));
+  };
+
+  window.startMistakeQuiz = async function() {
+    let items;
+    try { items = (await resolveMistakes(misSubject)).filter(misMatches); }
+    catch (e) { alert('問題データを読み込めませんでした: ' + e.message); return; }
+    if (items.length === 0) return;
+    if (misSubject !== currentSubject) {
+      try { await activateSubject(misSubject); updateMemoryUI(); }
+      catch (e) { alert('科目を切り替えられませんでした: ' + e.message); return; }
+    }
+    misSort(items, document.getElementById('mis-order').value);
+    startQuizWith(items.map(it => it.q));
+  };
+
+  // --- 間違えた問題の書き出し ---
+  function mistakeRow(sub, id, m, q) {
+    const src = `${q.year} ${q.qNum}`;
+    const pick = Number.isInteger(m.pick) && q.options[m.pick] ? `${m.pick + 1}. ${q.options[m.pick]}` : '';
+    return {
+      id, subject: SUBJECT_JA[sub], source: src,
+      title: `${SUBJECT_JA[sub]} ${src}｜${String(q.question).replace(/\s+/g, ' ').slice(0, 28)}`,
+      field: [q.genre, q.subgenre].filter(Boolean).join(' > '),
+      status: m.cleared ? '克服済み' : '未克服', count: m.n, last: m.t ? isoDate(m.t) : '', streak: m.streak || 0, pick,
+      correct: hasAnswerOf(q) ? correctLabel(q) : '', question: q.question, options: (q.options || []).slice(0, 5),
+      explanation: explanationPlain(q), image: q.imageUrl ? absUrl(q.imageUrl) : '', noteUrl: noteUrlOf(sub, q)
+    };
+  }
+  async function collectMistakeExport() {
+    const items = (await resolveMistakes(misSubject)).filter(misMatches);
+    return misSort(items, document.getElementById('mis-order').value).map(it => ({ sub: misSubject, ...it }));
+  }
+  function mistakesToCsv(items) {
+    const header = ['タイトル', '科目', '出典', '分野', '状況', '間違えた回数', '最後に間違えた日', '連続正解', 'あなたの回答', '正解', '問題文', '選択肢1', '選択肢2', '選択肢3', '選択肢4', '選択肢5', '解説', '原本画像', 'まとめノート', '問題ID'];
+    const esc = v => { v = String(v ?? ''); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const rows = items.map(({ sub, id, m, q }) => {
+      const r = mistakeRow(sub, id, m, q), o = r.options;
+      return [r.title, r.subject, r.source, r.field, r.status, r.count, r.last, r.streak, r.pick, r.correct, r.question, o[0] || '', o[1] || '', o[2] || '', o[3] || '', o[4] || '', r.explanation, r.image, r.noteUrl, r.id].map(esc).join(',');
+    });
+    return '﻿' + header.map(esc).join(',') + '\r\n' + rows.join('\r\n') + '\r\n';
+  }
+  function mistakesToMarkdown(items) {
+    let md = `# 間違えた問題（${SUBJECT_JA[misSubject]}科目・${nowLabel()} 書き出し・${items.length}問）\n\n`;
+    items.forEach(({ m, q }) => {
+      md += `## ${q.year} ${q.qNum}　${[q.genre, q.subgenre].filter(Boolean).join(' > ')}\n\n状況: **${m.cleared ? '克服済み' : '未克服'}**　間違えた回数: ${m.n}回　最後: ${m.t ? isoDate(m.t) : '日付不明'}\n\n`;
+      md += String(q.question).split('\n').map(l => '> ' + l).join('\n') + '\n\n';
+      if (q.imageUrl) md += `![問題の図](${absUrl(q.imageUrl)})\n\n`;
+      q.options.forEach((o, i) => { md += `${i + 1}. ${String(o).replace(/\n/g, ' ')}${i === m.pick ? '　← あなたの回答' : ''}\n`; });
+      md += `\n**正解: ${hasAnswerOf(q) ? correctLabel(q) : '未登録'}**\n\n${explanationPlain(q)}\n\n---\n\n`;
+    });
+    return md;
+  }
+  window.exportMistakes = async function(kind) {
+    let items;
+    try { items = await collectMistakeExport(); } catch (e) { showToast('問題データを読み込めませんでした'); return; }
+    if (items.length === 0) { showToast('書き出す問題がありません'); return; }
+    const stamp = isoDate(Date.now());
+    if (kind === 'csv') { downloadText(`間違えた問題_${SUBJECT_JA[misSubject]}_${stamp}.csv`, mistakesToCsv(items), 'text/csv;charset=utf-8'); showToast(`CSV（${items.length}問）を保存しました`); }
+    else if (kind === 'md') { downloadText(`間違えた問題_${SUBJECT_JA[misSubject]}_${stamp}.md`, mistakesToMarkdown(items), 'text/markdown;charset=utf-8'); showToast(`Markdown（${items.length}問）を保存しました`); }
+    else { const ok = await copyText(mistakesToMarkdown(items)); showToast(ok ? `${items.length}問をコピーしました。Notionに貼り付けてください` : 'コピーできませんでした'); }
+  };
 
   window.clearBookmarksOfSubject = function() {
     const n = bookmarkCount(bmSubject);
@@ -3592,6 +3843,7 @@ ${AI_JSON_FORMAT}
     const isCorrect = isCorrectAnswer(q, selectedIdx);
     if (isCorrect) { userMemory.history[q.id].c++; userMemory.history[q.id].w = 0; }
     else userMemory.history[q.id].w++;
+    recordMistake(q, isCorrect, selectedIdx);
     bumpStats(isCorrect);
   }
 
@@ -4136,6 +4388,7 @@ ${AI_JSON_FORMAT}`;
           userMemory.history[q.id].w++;
       }
       
+      recordMistake(q, isCorrect, selectedIdx);
       bumpStats(isCorrect);
       // ブックマークした問題の復習状況を自動で更新（間違い→復習中、2回連続正解→克服済み）
       const bm = userMemory.bookmarks && userMemory.bookmarks[q.id];

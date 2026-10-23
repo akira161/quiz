@@ -6,12 +6,13 @@
 // 必要な設定（Cloudflare の「変数とシークレット」）:
 //   NOTION_TOKEN        Notion内部インテグレーションのシークレット（シークレット）
 //   NOTION_DATABASE_ID  ブックマーク用データベースのID（変数）
+//   NOTION_MISTAKES_DATABASE_ID  間違えた問題用データベースのID（変数。使う場合のみ）
 //   SYNC_KEY            アプリとWorkerだけが知る合言葉（シークレット。推測されにくい長い文字列）
 //   ALLOWED_ORIGIN      アプリを開くサイトのオリジン（変数。例: https://akira161.github.io）
 //
 // API:
 //   GET  /health  → 接続テスト（Notionデータベースの題名を返す）
-//   POST /sync    → { items: [行...], removed: [問題ID...] } を反映
+//   POST /sync    → { target: 'bookmarks' | 'mistakes', items: [行...], removed: [問題ID...] } を反映
 
 const NOTION = 'https://api.notion.com/v1';
 const NOTION_VERSION = '2022-06-28';
@@ -84,6 +85,24 @@ function propsOf(r) {
   return p;
 }
 
+function mistakeProps(r) {
+  const o = r.options || [];
+  const p = {
+    'タイトル': { title: rt(r.title, 200) },
+    '科目': sel(r.subject), '状況': sel(r.status),
+    '出典': { rich_text: rt(r.source, 200) }, '分野': { rich_text: rt(r.field, 300) },
+    '間違えた回数': { number: Number.isFinite(+r.count) ? +r.count : 0 },
+    '連続正解': { number: Number.isFinite(+r.streak) ? +r.streak : 0 },
+    '最後に間違えた日': /^\d{4}-\d{2}-\d{2}$/.test(r.last || '') ? { date: { start: r.last } } : { date: null },
+    'あなたの回答': { rich_text: rt(r.pick, 1000) },
+    '正解': { rich_text: rt(r.correct, 100) }, '問題文': { rich_text: rt(r.question) }, '解説': { rich_text: rt(r.explanation) },
+    '原本画像': url(r.image), 'まとめノート': url(r.noteUrl),
+    '問題ID': { rich_text: rt(r.id, 300) },
+  };
+  for (let i = 0; i < 5; i++) p[`選択肢${i + 1}`] = { rich_text: rt(o[i], 1000) };
+  return p;
+}
+
 // 新規ページの本文（読みやすさのため。更新時は本文には触れない）
 function bodyOf(r) {
   const blocks = [];
@@ -96,11 +115,11 @@ function bodyOf(r) {
   return blocks.slice(0, 100);
 }
 
-async function existingPages(env) {
+async function existingPages(env, dbId) {
   const map = new Map();   // 問題ID → ページID
   let cursor;
   for (let guard = 0; guard < 30; guard++) {
-    const data = await notion(env, 'POST', `/databases/${env.NOTION_DATABASE_ID}/query`, { page_size: 100, start_cursor: cursor });
+    const data = await notion(env, 'POST', `/databases/${dbId}/query`, { page_size: 100, start_cursor: cursor });
     for (const pg of data.results || []) {
       const id = ((pg.properties['問題ID'] || {}).rich_text || []).map(t => t.plain_text).join('');
       if (id) map.set(id, pg.id);
@@ -111,21 +130,30 @@ async function existingPages(env) {
   return map;
 }
 
+function targetOf(env, payload) {
+  if (payload.target === 'mistakes') {
+    if (!env.NOTION_MISTAKES_DATABASE_ID) throw Object.assign(new Error('Workerに NOTION_MISTAKES_DATABASE_ID（間違えた問題のデータベースID）が設定されていません'), { status: 400 });
+    return { db: env.NOTION_MISTAKES_DATABASE_ID, props: mistakeProps };
+  }
+  return { db: env.NOTION_DATABASE_ID, props: propsOf };
+}
+
 async function handleSync(env, payload) {
+  const { db, props } = targetOf(env, payload);
   const items = Array.isArray(payload.items) ? payload.items : [];
   const removed = Array.isArray(payload.removed) ? payload.removed.map(String) : [];
   if (items.length + removed.length > MAX_ITEMS * 2) throw Object.assign(new Error(`一度に送れるのは${MAX_ITEMS * 2}件までです`), { status: 413 });
   const result = { created: 0, updated: 0, archived: 0, done: [], failed: [] };
-  const pages = await existingPages(env);
+  const pages = await existingPages(env, db);
   for (const r of items) {
     if (!r || !r.id) continue;
     try {
       const pageId = pages.get(String(r.id));
       if (pageId) {
-        await notion(env, 'PATCH', `/pages/${pageId}`, { properties: propsOf(r), archived: false });
+        await notion(env, 'PATCH', `/pages/${pageId}`, { properties: props(r), archived: false });
         result.updated++;
       } else {
-        const pg = await notion(env, 'POST', '/pages', { parent: { database_id: env.NOTION_DATABASE_ID }, properties: propsOf(r), children: bodyOf(r) });
+        const pg = await notion(env, 'POST', '/pages', { parent: { database_id: db }, properties: props(r), children: bodyOf(r) });
         pages.set(String(r.id), pg.id);
         result.created++;
       }
@@ -161,7 +189,12 @@ export default {
         const need = ['タイトル', '問題ID', '復習ステータス'];
         const missing = need.filter(n => !(db.properties || {})[n]);
         if (missing.length) return json(env, req, 400, { ok: false, error: `データベースに列がありません: ${missing.join('、')}` });
-        return json(env, req, 200, { ok: true, database: title });
+        let mistakes = null;
+        if (env.NOTION_MISTAKES_DATABASE_ID) {
+          const mdb = await notion(env, 'GET', `/databases/${env.NOTION_MISTAKES_DATABASE_ID}`);
+          mistakes = (mdb.title || []).map(t => t.plain_text).join('') || '（無題）';
+        }
+        return json(env, req, 200, { ok: true, database: title, mistakes });
       }
       if (u.pathname === '/sync' && req.method === 'POST') {
         const payload = await req.json();
