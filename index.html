@@ -447,6 +447,7 @@
         <li><b>ブックマーク:</b> 問題画面の ☆ を押すと登録できます（過去問・AI生成問題・腕試しの問題、腕試しの結果一覧からも）。スタート画面の「★ ブックマークを見る」で見返したり、ブックマークした問題だけを解いたりできます。</li>
         <li><b>操作のコツ:</b> スタート画面の「出題する問題」「出題数」はボタン1つで切り替えられます。問題画面では、下の「◀ 前」で前の問題に戻れ、キーボードでは 1〜5=選択 / Enter・→=次へ / ←=前へ / B=ブックマーク が使えます。スマホの戻るボタンでも、進捗を保存してスタート画面に戻れます（腕試し中は確認が出ます）。結果画面の「間違えた問題をもう一度解く」で復習できます。文字の大きさは「⚙️ 設定」で変えられます。</li>
         <li><b>ブックマークの活用:</b> ブックマーク画面で、復習状況（未着手→復習中→克服済み）の切替、メモ、検索、状況での絞り込みができます。ブックマークした問題は、解くと自動で状況が更新されます（間違えたら復習中、2回連続正解で克服済み）。「📤 Notion・ファイルに書き出す」で、CSV（Notionのデータベース用）やMarkdown（Notionのページに貼り付け）を作れます。設定の「学習データのバックアップ」で全データを保存・復元できます。</li>
+        <li><b>Notionへの自動反映:</b> 設定の「☁️ Notionへ自動で反映」で、ブックマークの変更をNotionのデータベースへ自動で反映できます（中継サーバーの作り方は worker/README.md）。</li>
         <li><b>弱点克服フィルター:</b> 「未回答の問題」や「過去に間違えた問題」だけを優先して出題し、効率的な復習が可能です。</li>
         <li><b>傾向重視:</b> 出題順序を「傾向重視」にすると、近年よく出題されるテーマが優先的に出題されます。</li>
       </ul>
@@ -660,6 +661,21 @@
           </div>
         </div>
 
+        <hr style="border: none; border-top: 1px dashed var(--border); margin: 20px 0;">
+        <div class="filter-group">
+          <label>☁️ Notionへ自動で反映（ブックマーク）</label>
+          <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 8px;">ブックマークの追加・状況・メモの変更が、Notionのデータベースに自動で反映されます（アプリ→Notionの一方向）。最初にCloudflare Workersの中継サーバーを作る必要があります（手順: リポジトリの worker/README.md）。</div>
+          <input type="url" id="notion-url" class="filter-input" placeholder="WorkerのURL（https://…workers.dev）" style="margin-bottom: 8px;">
+          <input type="password" id="notion-key" class="filter-input" placeholder="同期キー（Workerに登録した合言葉）" style="margin-bottom: 8px;">
+          <label style="display:flex;gap:8px;align-items:center;font-weight:normal;margin-bottom:6px;"><input type="checkbox" id="notion-enabled"> 自動で反映する</label>
+          <label style="display:flex;gap:8px;align-items:center;font-weight:normal;margin-bottom:8px;"><input type="checkbox" id="notion-delete"> ブックマークを外したら、Notionのページもゴミ箱へ移す</label>
+          <div style="display: flex; gap: 8px;">
+            <button class="nav-btn secondary" onclick="saveNotionSettings()" style="flex: 1; padding: 12px; font-size: 0.9rem;">保存</button>
+            <button class="nav-btn secondary" onclick="testNotionConnection()" style="flex: 1; padding: 12px; font-size: 0.9rem;">接続テスト</button>
+            <button class="nav-btn secondary" onclick="syncNotionNow()" style="flex: 1; padding: 12px; font-size: 0.9rem;">今すぐ全件</button>
+          </div>
+          <div id="notion-status" style="font-size: 0.8rem; margin-top: 6px; color: var(--text-muted);"></div>
+        </div>
         <hr style="border: none; border-top: 1px dashed var(--border); margin: 20px 0;">
         <div class="filter-group">
           <label>💾 学習データのバックアップ</label>
@@ -1121,6 +1137,8 @@
     loadMatomeNotes().catch(e => console.warn("まとめノート読み込みスキップ:", e));
     applyTheme(); 
     applyPrefs();
+    loadNotionCfg();
+    scheduleNotionSync(4000);
     updateMemoryUI(); 
     loadApiKey();
     switchScreen('screen-start');
@@ -1919,6 +1937,7 @@
     if (userMemory.bookmarks[q.id]) {
       delete userMemory.bookmarks[q.id];
       saveUserData();
+      noteBookmarkRemoved(q.id);
       return false;
     }
     userMemory.bookmarks[q.id] = {
@@ -1928,6 +1947,7 @@
       snap: isAiQuestion(q) ? snapshotOf(q) : null
     };
     saveUserData();
+    scheduleNotionSync();
     return true;
   }
 
@@ -2059,16 +2079,16 @@
       }
       const st = bmStatusOf(entry);
       card.innerHTML = `<div class="bm-head"><span>${escapeHtml(meta)}<br><span style="font-weight:normal;">登録: ${escapeHtml(entry.date || '')}</span></span><span style="display:flex;align-items:center;gap:6px;"><button class="bm-status ${st}" title="押すと 未着手→復習中→克服済み の順に切り替わります">${BM_STATUS[st]}</button><button class="bookmark-btn on" title="ブックマークを外す">★</button></span></div>${body}<textarea class="bm-memo" placeholder="メモ（覚え方・間違えた理由など）" rows="1">${escapeHtml(entry.note || '')}</textarea>`;
-      card.querySelector('.bookmark-btn').onclick = () => { delete userMemory.bookmarks[id]; saveUserData(); updateBookmarkOpenButton(); renderBookmarks(); };
+      card.querySelector('.bookmark-btn').onclick = () => { delete userMemory.bookmarks[id]; noteBookmarkRemoved(id); saveUserData(); updateBookmarkOpenButton(); renderBookmarks(); };
       card.querySelector('.bm-status').onclick = () => {
         const order = ['todo', 'doing', 'done'];
         entry.status = order[(order.indexOf(bmStatusOf(entry)) + 1) % 3];
         if (entry.status !== 'done') entry.streak = 0;
-        saveUserData(); renderBookmarks();
+        saveUserData(); scheduleNotionSync(); renderBookmarks();
       };
       const memo = card.querySelector('.bm-memo');
       memo.oninput = () => { entry.note = memo.value.slice(0, 2000); clearTimeout(memo.__t); memo.__t = setTimeout(saveUserData, 500); };
-      memo.onchange = () => { saveUserData(); renderBookmarks(); };
+      memo.onchange = () => { saveUserData(); scheduleNotionSync(); renderBookmarks(); };
       listEl.appendChild(card);
     });
     if (window.MathJax) typesetMath([listEl]).catch(err => console.error(err));
@@ -2100,16 +2120,26 @@
     if (sub === 'senmon' || !q.trendKey || isAiQuestion(q)) return '';
     return absUrl(`viewer.html?subject=${sub}&c=${encodeURIComponent(q.genre)}&q=${encodeURIComponent(q.trendKey)}`);
   }
+  // 1件のブックマークを、書き出し・Notion同期で共通の行（オブジェクト）にする
+  function bookmarkRow(sub, id, entry, q) {
+    const src = isAiQuestion(q) ? q.year : `${q.year} ${q.qNum}`;
+    return {
+      id, subject: SUBJECT_JA[sub], kind: bmKind(q), source: src,
+      title: `${SUBJECT_JA[sub]} ${src}｜${String(q.question).replace(/\s+/g, ' ').slice(0, 28)}`,
+      field: [q.genre, q.subgenre].filter(Boolean).join(' > '),
+      status: BM_STATUS[bmStatusOf(entry)], note: entry.note || '', date: isoDate(entry.t),
+      correct: hasAnswerOf(q) ? correctLabel(q) : '', question: q.question, options: (q.options || []).slice(0, 5),
+      explanation: explanationPlain(q), image: q.imageUrl ? absUrl(q.imageUrl) : '', noteUrl: noteUrlOf(sub, q)
+    };
+  }
   function bookmarksToCsv(items) {
     const header = ['タイトル', '科目', '種別', '出典', '分野', '復習ステータス', 'メモ', '登録日', '正解', '問題文', '選択肢1', '選択肢2', '選択肢3', '選択肢4', '選択肢5', '解説', '原本画像', 'まとめノート', '問題ID'];
     const esc = v => { v = String(v ?? ''); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
     const rows = items.map(({ sub, id, entry, q }) => {
-      const src = isAiQuestion(q) ? q.year : `${q.year} ${q.qNum}`;
-      const title = `${SUBJECT_JA[sub]} ${src}｜${String(q.question).replace(/\s+/g, ' ').slice(0, 28)}`;
-      const field = [q.genre, q.subgenre].filter(Boolean).join(' > ');
-      const o = q.options || [];
-      return [title, SUBJECT_JA[sub], bmKind(q), src, field, BM_STATUS[bmStatusOf(entry)], entry.note || '', isoDate(entry.t), hasAnswerOf(q) ? correctLabel(q) : '',
-        q.question, o[0] || '', o[1] || '', o[2] || '', o[3] || '', o[4] || '', explanationPlain(q), q.imageUrl ? absUrl(q.imageUrl) : '', noteUrlOf(sub, q), id].map(esc).join(',');
+      const r = bookmarkRow(sub, id, entry, q);
+      const o = r.options;
+      return [r.title, r.subject, r.kind, r.source, r.field, r.status, r.note, r.date, r.correct,
+        r.question, o[0] || '', o[1] || '', o[2] || '', o[3] || '', o[4] || '', r.explanation, r.image, r.noteUrl, r.id].map(esc).join(',');
     });
     return '﻿' + header.map(esc).join(',') + '\r\n' + rows.join('\r\n') + '\r\n';
   }
@@ -2212,11 +2242,135 @@
     reader.readAsText(file);
   };
 
+
+  // --- Notionへの自動反映（Cloudflare Workers の中継サーバー経由。設定は worker/README.md） ---
+  const NOTION_SYNC_KEY = 'notion_sync';
+  let notionCfg = { url: '', key: '', enabled: false, deleteOnRemove: false, removed: [], last: '', error: '' };
+  let notionBusy = false, notionTimer = null;
+
+  function loadNotionCfg() {
+    try { notionCfg = Object.assign(notionCfg, JSON.parse(localStorage.getItem(NOTION_SYNC_KEY) || '{}')); } catch (e) {}
+    const el = id => document.getElementById(id);
+    if (!el('notion-url')) return;
+    el('notion-url').value = notionCfg.url || '';
+    el('notion-key').value = notionCfg.key || '';
+    el('notion-enabled').checked = !!notionCfg.enabled;
+    el('notion-delete').checked = !!notionCfg.deleteOnRemove;
+    renderNotionStatus();
+  }
+  function saveNotionCfg() { try { localStorage.setItem(NOTION_SYNC_KEY, JSON.stringify(notionCfg)); } catch (e) {} }
+  function renderNotionStatus(msg) {
+    const el = document.getElementById('notion-status');
+    if (!el) return;
+    el.style.color = notionCfg.error ? 'var(--danger-text)' : 'var(--text-muted)';
+    el.textContent = msg || (notionCfg.error ? `⚠️ ${notionCfg.error}` : notionCfg.last ? `最終同期: ${notionCfg.last}` : notionCfg.enabled ? '同期の準備ができています' : '未設定（設定すると、ブックマークの変更が自動でNotionに反映されます）');
+  }
+  window.saveNotionSettings = function() {
+    const u = document.getElementById('notion-url').value.trim().replace(/\/+$/, '');
+    if (u && !/^https:\/\//.test(u)) { showToast('WorkerのURLは https:// から入力してください'); return; }
+    notionCfg.url = u;
+    notionCfg.key = document.getElementById('notion-key').value.trim();
+    notionCfg.enabled = document.getElementById('notion-enabled').checked && !!(u && notionCfg.key);
+    document.getElementById('notion-enabled').checked = notionCfg.enabled;
+    notionCfg.deleteOnRemove = document.getElementById('notion-delete').checked;
+    if (!notionCfg.deleteOnRemove) notionCfg.removed = [];
+    notionCfg.error = '';
+    saveNotionCfg();
+    renderNotionStatus();
+    if (notionCfg.enabled) scheduleNotionSync(500);
+  };
+  async function notionFetch(path, opt = {}) {
+    const res = await fetch(notionCfg.url + path, { ...opt, headers: { Authorization: 'Bearer ' + notionCfg.key, 'Content-Type': 'application/json' } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  }
+  window.testNotionConnection = async function() {
+    saveNotionSettings();
+    if (!notionCfg.url || !notionCfg.key) { showToast('WorkerのURLと同期キーを入力してください'); return; }
+    renderNotionStatus('接続を確認中...');
+    try {
+      const d = await notionFetch('/health');
+      notionCfg.error = ''; saveNotionCfg();
+      renderNotionStatus(`✅ 接続できました（データベース: ${d.database}）`);
+    } catch (e) {
+      notionCfg.error = `接続できません: ${e.message}`; saveNotionCfg(); renderNotionStatus();
+    }
+  };
+  // ブックマークを外したことをNotion側にも反映するため、IDを覚えておく（「外したらNotionのページもゴミ箱へ」がオンのとき）
+  function noteBookmarkRemoved(id) {
+    if (!notionCfg.enabled || !notionCfg.deleteOnRemove) { scheduleNotionSync(); return; }
+    if (!notionCfg.removed.includes(id)) notionCfg.removed.push(id);
+    saveNotionCfg();
+    scheduleNotionSync();
+  }
+  function rowHash(r) {
+    const s = JSON.stringify(r);
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    return String(h);
+  }
+  window.scheduleNotionSync = function(delay = 3000) {
+    if (!notionCfg.enabled) return;
+    clearTimeout(notionTimer);
+    notionTimer = setTimeout(() => runNotionSync(), delay);
+  };
+  async function runNotionSync(force) {
+    if (!notionCfg.enabled || notionBusy) return;
+    if (navigator.onLine === false) return;
+    notionBusy = true;
+    try {
+      renderNotionStatus('Notionに反映中...');
+      // 変更のあるブックマークだけを集める
+      const todo = [];
+      for (const sub of Object.keys(SUBJECTS)) {
+        if (!bookmarkCount(sub)) continue;
+        for (const it of await resolveBookmarks(sub)) {
+          if (!it.q) continue;
+          const row = bookmarkRow(sub, it.id, it.entry, it.q);
+          const h = rowHash(row);
+          if (force || it.entry.sync !== h) todo.push({ row, h, entry: it.entry });
+        }
+      }
+      const removed = notionCfg.removed.slice();
+      let sent = 0, failed = 0, lastErr = '';
+      for (let i = 0; i < todo.length || (i === 0 && removed.length); i += 20) {
+        const chunk = todo.slice(i, i + 20);
+        const rem = i === 0 ? removed : [];
+        const d = await notionFetch('/sync', { method: 'POST', body: JSON.stringify({ items: chunk.map(c => c.row), removed: rem }) });
+        const okIds = new Set(d.done || []);
+        chunk.forEach(c => { if (okIds.has(c.row.id)) { c.entry.sync = c.h; sent++; } });
+        (d.failed || []).forEach(f => { failed++; lastErr = f.error; });
+        if (rem.length) notionCfg.removed = notionCfg.removed.filter(id => !(d.done || []).includes(id));
+        saveUserData(); saveNotionCfg();
+        if (!todo.length) break;
+      }
+      notionCfg.error = failed ? `${failed}件を反映できませんでした（${lastErr}）。あとで自動で再試行します` : '';
+      if (!failed) notionCfg.last = nowLabel();
+      saveNotionCfg();
+      renderNotionStatus(!failed && sent === 0 && removed.length === 0 && !force ? `最終同期: ${notionCfg.last || nowLabel()}（変更なし）` : undefined);
+      if (failed) scheduleNotionSync(60000);
+    } catch (e) {
+      notionCfg.error = `同期できませんでした: ${e.message}`;
+      saveNotionCfg(); renderNotionStatus();
+      scheduleNotionSync(120000);
+    } finally {
+      notionBusy = false;
+    }
+  }
+  window.syncNotionNow = async function() {
+    saveNotionSettings();
+    if (!notionCfg.enabled) { showToast('WorkerのURLと同期キーを入力し、「自動で反映する」をオンにしてください'); return; }
+    await runNotionSync(true);
+    showToast(notionCfg.error ? 'Notionへの反映に失敗しました' : 'Notionに反映しました');
+  };
+  window.addEventListener('online', () => scheduleNotionSync(1000));
+
   window.clearBookmarksOfSubject = function() {
     const n = bookmarkCount(bmSubject);
     if (n === 0) { alert("この科目のブックマークはありません。"); return; }
     if (!confirm(`${SUBJECTS[bmSubject].label}のブックマーク ${n} 件をすべて外しますか？\n（この操作は取り消せません）`)) return;
-    Object.keys(userMemory.bookmarks).forEach(id => { if (userMemory.bookmarks[id].subject === bmSubject) delete userMemory.bookmarks[id]; });
+    Object.keys(userMemory.bookmarks).forEach(id => { if (userMemory.bookmarks[id].subject === bmSubject) { delete userMemory.bookmarks[id]; noteBookmarkRemoved(id); } });
     saveUserData();
     updateBookmarkOpenButton();
     renderBookmarks();
@@ -3993,6 +4147,7 @@ ${AI_JSON_FORMAT}`;
           else if (before === 'todo') bm.status = 'doing';
         } else { bm.streak = 0; bm.status = 'doing'; }
         if (before !== 'done' && bm.status === 'done') showToast('🎉 ブックマークの問題を克服済みにしました');
+        scheduleNotionSync();
       }
       saveUserData();
     }

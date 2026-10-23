@@ -1,0 +1,11 @@
+# Cloudflare Workers の設定（wrangler を使う場合）。ダッシュボードに貼り付けるだけでも動きます。
+name = "quiz-notion-sync"
+main = "notion-sync.js"
+compatibility_date = "2024-11-01"
+
+[vars]
+ALLOWED_ORIGIN = "https://akira161.github.io"
+NOTION_DATABASE_ID = "5ed7759baeb94c9fb3456d25ab95f776"
+# NOTION_TOKEN と SYNC_KEY はシークレットなのでここには書かず、次のコマンドで登録する:
+#   npx wrangler secret put NOTION_TOKEN
+#   npx wrangler secret put SYNC_KEY
