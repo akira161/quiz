@@ -491,6 +491,7 @@
         <li><b>ブックマークの活用:</b> ブックマーク画面で、復習状況（未着手→復習中→克服済み）の切替、メモ、検索、状況での絞り込みができます。ブックマークした問題は、解くと自動で状況が更新されます（間違えたら復習中、2回連続正解で克服済み）。「📤 Notion・ファイルに書き出す」で、CSV（Notionのデータベース用）やMarkdown（Notionのページに貼り付け）を作れます。設定の「学習データのバックアップ」で全データを保存・復元できます。</li>
         <li><b>Notionへの自動反映:</b> 設定の「☁️ Notionへ自動で反映」で、ブックマークの変更をNotionのデータベースへ自動で反映できます（中継サーバーの作り方は worker/README.md）。</li>
         <li><b>腕試しのPDF出力:</b> 腕試しの設定画面の「📄 この出題セットを問題冊子PDFにする」（過去問セット）、試験中の「📄 PDF」、採点後の「📄 解答・解説つきPDF／問題冊子・解答用紙のPDF」から、試験のような体裁（表紙・注意事項・問題・解答用紙・解答解説）のPDFを作れます。出力画面で「PDFとして保存」を選んでください。</li>
+        <li><b>AI問題セットの先行生成:</b> 腕試しの設定画面でAI問題セットを選ぶと、裏で問題を先に作り始めます（「✅ 準備ができています」と出たら、すぐに開始できます）。試験を始めると、次回用のセットを自動で作っておきます。作った問題はこの端末に最長14日間保存されます。</li>
         <li><b>弱点克服フィルター:</b> 「未回答の問題」や「過去に間違えた問題」だけを優先して出題し、効率的な復習が可能です。</li>
         <li><b>傾向重視:</b> 出題順序を「傾向重視」にすると、近年よく出題されるテーマが優先的に出題されます。</li>
       </ul>
@@ -972,6 +973,7 @@
       <label for="mock-source">出題セット</label>
       <select id="mock-source" class="filter-select" onchange="updateMockSourceNote()"></select>
       <div id="mock-source-note" style="font-size: 0.8rem; color: var(--trend-text); margin-top: 6px; line-height: 1.5;"></div>
+      <div id="mock-prep-status" style="font-size: 0.8rem; margin-top: 6px; line-height: 1.5;"></div>
     </div>
     <div class="filter-group" style="margin-top: 12px;">
       <label for="mock-time">制限時間</label>
@@ -1516,6 +1518,7 @@
   }
 
   async function activateSubject(key, buffer) {
+    if (mockPrep && mockPrep.subject !== key) cancelMockPrep();   // 科目が変わったら、作成途中のAI問題セットは破棄
     const qs = await loadSubjectQuestions(key, buffer);
     currentSubject = key;
     allQuestions = qs;
@@ -1966,7 +1969,7 @@
   }
   window.setAiEnabled = function(on) {
     if (!on && currentAiJob && !currentAiJob.aborted) { currentAiJob.cancel(); hideAiLoading(); }
-    if (!on) cancelPracticePrefetch();
+    if (!on) { cancelPracticePrefetch(); cancelMockPrep(); }
     savePref('aiOff', !on);
     applyAiEnabled();
     showToast(on ? 'AI機能をオンにしました' : 'AI機能をオフにしました');
@@ -3283,9 +3286,32 @@
     } else {
       const apiKey = localStorage.getItem('my_gemini_api_key');
       if (!apiKey) { alert("AI予想問題を使うには、スタート画面の設定エリアで Gemini APIキーを保存してください。"); return; }
+      let built = null;
+      const cached = takeMockCache(currentSubject);
+      if (cached) {
+        built = { questions: cached.questions, filled: cached.filled };
+      } else if (mockPrep && mockPrep.subject === currentSubject) {
+        // 先行生成の途中なら、その完成を待つ（最初からやり直さない）
+        const prep = mockPrep;
+        const uiJob = startAiJob('mock');
+        uiJob.cancel = function() { this.aborted = true; this.controller.abort(); prep.job.cancel(); if (mockPrep === prep) mockPrep = null; };
+        showMockBuildUi(prep.total || aiMockPlan(source).reduce((t, x) => t + x.ai, 0), 0);
+        const tick = setInterval(() => {
+          const total = prep.total || 1;
+          document.getElementById('ai-progress-text').textContent = prep.msg || '準備中...';
+          document.getElementById('ai-progress-count').textContent = `${prep.done} / ${total} 問`;
+          document.getElementById('ai-progress-bar').style.width = `${Math.min(100, Math.round(prep.done / total * 100))}%`;
+        }, 300);
+        await Promise.race([prep.promise, new Promise(res => uiJob.controller.signal.addEventListener('abort', res, { once: true }))]);
+        clearInterval(tick);
+        hideAiLoading();
+        endAiJob(uiJob);
+        if (uiJob.aborted) return;
+        const done = takeMockCache(currentSubject);
+        if (done) built = { questions: done.questions, filled: done.filled };
+      }
       const job = startAiJob('mock');
-      let built;
-      try {
+      if (!built) try {
         built = await buildAIMockSet(apiKey, aiMockPlan(source), job);
       } catch (error) {
         endAiJob(job);
@@ -3307,6 +3333,8 @@
 
     if (questions.length === 0) { alert("出題できる問題がありません。"); return; }
     beginMockExam(questions, { source, sourceLabel, timeLimitSec });
+    // 試験を始めたら、次回用のAI問題セットを裏で作っておく（次は待たずに始められる）
+    if (source.startsWith('ai')) setTimeout(startMockPrep, 5000);
   };
 
   function beginMockExam(questions, settings) {
@@ -3600,6 +3628,8 @@
   window.updateMockSourceNote = function() {
     const v = document.getElementById('mock-source').value;
     const note = document.getElementById('mock-source-note');
+    if (v.startsWith('ai')) startMockPrep();   // AIセットを選んだら、裏で先に作り始める
+    updateMockPrepStatus();
     if (!v.startsWith('ai')) { note.textContent = ''; return; }
     note.textContent = currentSubject === 'senmon'
       ? '※AIが作る問題はすべてオリジナルです（過去問は使いません）。正答や内容の誤りが含まれる場合があります。'
@@ -3607,7 +3637,13 @@
   };
 
   // AI予想問題のセットを作る（分野ごとに4問ずつ生成し、重複を避けるため既出の問題文を渡す）
-  async function buildAIMockSet(apiKey, plan, job) {
+
+  // --- 腕試しのAI問題セットの先行生成（試験を始めるときに待たなくて済むよう、裏で次のセットを作っておく） ---
+  const AI_MOCK_CACHE_KEY = 'ai_mock_cache';
+  const AI_MOCK_CACHE_TTL = 14 * 24 * 3600 * 1000;
+  let mockPrep = null;   // 作成中: { subject, job, done, total, msg, promise }
+
+  function showMockBuildUi(totalAiNeed, totalPast) {
     switchScreen('screen-quiz');
     document.getElementById('q-text').style.display = 'none';
     document.getElementById('opt-box').style.display = 'none';
@@ -3615,22 +3651,65 @@
     document.getElementById('mock-status-bar').style.display = 'none';
     document.getElementById('mock-nav').style.display = 'none';
     document.getElementById('mock-controls').style.display = 'none';
-    
-    const totalAiNeed = plan.reduce((sum, p) => sum + p.ai, 0);
-    const totalPast = plan.reduce((sum, p) => sum + p.past, 0);
-
-    // ローディングとプログレスバーの表示
     showAiLoading();
     document.getElementById('ai-progress-container').style.display = 'block';
     document.getElementById('ai-loading-msg').innerHTML = totalPast > 0
       ? `本番形式の${totalAiNeed + totalPast}問セットを構築中...<br>（AI生成${totalAiNeed}問 ＋ 過去問${totalPast}問）`
       : `本番形式の${totalAiNeed}問セットを構築中...<br>（すべてAIによる新作・数分かかります）`;
+  }
+  function loadMockCache() { try { return JSON.parse(localStorage.getItem(AI_MOCK_CACHE_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function saveMockCache(c) { try { localStorage.setItem(AI_MOCK_CACHE_KEY, JSON.stringify(c)); } catch (e) { console.warn('先行生成した問題を保存できませんでした'); } }
+  function hasMockCache(subject) { const e = loadMockCache()[subject]; return !!(e && Date.now() - e.t < AI_MOCK_CACHE_TTL); }
+  function takeMockCache(subject) {
+    const c = loadMockCache(), e = c[subject];
+    if (!e || Date.now() - e.t >= AI_MOCK_CACHE_TTL) return null;
+    delete c[subject]; saveMockCache(c);
+    return e;
+  }
+  window.updateMockPrepStatus = function() {
+    const el = document.getElementById('mock-prep-status');
+    if (!el) return;
+    const v = (document.getElementById('mock-source') || {}).value || '';
+    if (!v.startsWith('ai')) { el.textContent = ''; return; }
+    if (hasMockCache(currentSubject)) { el.style.color = 'var(--success-text)'; el.textContent = '✅ AI問題セットの準備ができています（すぐに開始できます）'; }
+    else if (mockPrep && mockPrep.subject === currentSubject) { el.style.color = 'var(--text-muted)'; el.textContent = `⏳ AI問題セットを準備中…（${mockPrep.done}/${mockPrep.total || '?'}問）。今開始すると、完成を待ちます`; }
+    else { el.style.color = 'var(--text-muted)'; el.textContent = ''; }
+  };
+  function cancelMockPrep() { if (mockPrep) { mockPrep.job.cancel(); mockPrep = null; } }
+  window.startMockPrep = function() {
+    if (isAiOff() || mockPrep || hasMockCache(currentSubject)) return;
+    const apiKey = localStorage.getItem('my_gemini_api_key');
+    if (!apiKey || navigator.onLine === false) return;
+    if (currentAiJob && !currentAiJob.aborted) return;   // いま別のAI生成中なら、あとで
+    const subject = currentSubject;
+    const controller = new AbortController();
+    const job = { kind: 'prep', controller, aborted: false, cancel() { this.aborted = true; controller.abort(); } };
+    const prep = mockPrep = { subject, job, done: 0, total: 0, msg: '', promise: null };
+    prep.promise = buildAIMockSet(apiKey, aiMockPlan('aiall'), job, { quiet: true, onProgress: (d, t, m) => { prep.done = d; prep.total = t; prep.msg = m; updateMockPrepStatus(); } })
+      .then(res => {
+        if (job.aborted || subject !== currentSubject) return;
+        const c = loadMockCache();
+        c[subject] = { t: Date.now(), questions: res.questions, filled: res.filled };
+        saveMockCache(c);
+      })
+      .catch(e => { if (!(e instanceof AiCancelled)) console.warn('AI問題セットの先行生成に失敗しました:', e.message); })
+      .finally(() => { if (mockPrep === prep) mockPrep = null; updateMockPrepStatus(); });
+    updateMockPrepStatus();
+  };
+
+  // opts.quiet=true: 画面を切り替えず、裏で作る（先行生成用）。進み具合は opts.onProgress(done, total, msg) に知らせる
+  async function buildAIMockSet(apiKey, plan, job, opts = {}) {
+    const quiet = !!opts.quiet;
+    const totalAiNeed = plan.reduce((sum, p) => sum + p.ai, 0);
+    const totalPast = plan.reduce((sum, p) => sum + p.past, 0);
+    if (!quiet) showMockBuildUi(totalAiNeed, totalPast);
 
     let aiGeneratedCount = 0;
 
     const updateProgress = (stepMsg, addedCount = 0) => {
       if (job.aborted) return;
       aiGeneratedCount += addedCount;
+      if (quiet) { if (opts.onProgress) opts.onProgress(Math.min(aiGeneratedCount, totalAiNeed), totalAiNeed, stepMsg); return; }
       const percent = Math.min(100, Math.round((aiGeneratedCount / totalAiNeed) * 100));
       document.getElementById('ai-progress-text').textContent = stepMsg;
       document.getElementById('ai-progress-text').style.color = '#a855f7'; 
@@ -3639,7 +3718,7 @@
     };
 
     const retryCallback = (retriesLeft, isLite) => {
-      if (job.aborted) return;
+      if (job.aborted || quiet) return;
       const modelName = isLite ? "軽量(Lite)モデル" : "標準モデル";
       document.getElementById('ai-progress-text').textContent = `API混雑中... 再試行(${modelName})`;
       document.getElementById('ai-progress-text').style.color = '#eab308'; 
@@ -3776,7 +3855,7 @@
       // 適性科目は分野ごとの区切りがないので、全体を混ぜる
       return { questions: mockRuleOf(currentSubject).allRequired ? shuffleArray(result) : result, filled };
     } finally {
-      hideAiLoading();
+      if (!quiet) hideAiLoading();
     }
   }
 
