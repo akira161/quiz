@@ -24,6 +24,8 @@
    | `ALLOWED_ORIGIN` | 変数 | `https://akira161.github.io` |
 4. WorkerのURL（`https://〇〇.△△.workers.dev`）を控える。
 
+GitHub連携（Workers Builds）でデプロイする場合: 「設定」→「ビルド」で **ルートディレクトリを `worker`** にし、デプロイコマンドは `npx wrangler deploy` のままにします。`worker/wrangler.toml` の `name`（`quiz`）を、Cloudflare上のWorker名と同じにしてください。`NOTION_TOKEN` と `SYNC_KEY` はビルド変数ではなく、Workerの「変数とシークレット」にシークレットとして登録します。
+
 wranglerを使う場合は、このフォルダで `npx wrangler secret put NOTION_TOKEN`、`npx wrangler secret put SYNC_KEY`、`npx wrangler deploy`（`wrangler.toml` に変数を記載済み）。
 
 ## 3. アプリに設定する
