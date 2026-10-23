@@ -2911,6 +2911,21 @@
     a.forEach(x => { if (b.has(x)) inter++; });
     return inter / (a.size + b.size - inter);
   }
+  // AIの問題が、過去問とほぼ同じ（流用）でないかを確かめる
+  const COPY_THRESHOLD = 0.5;
+  const pastBigramCache = {};
+  function pastBigramsOf(subject) {
+    const qs = subjectCache[subject] || (subject === currentSubject ? allQuestions : []);
+    const c = pastBigramCache[subject];
+    if (c && c.n === qs.length) return c.list;
+    const list = qs.map(q => bigramsOf(q.question + (q.options || []).join('')));
+    pastBigramCache[subject] = { n: qs.length, list };
+    return list;
+  }
+  function isCopyOfPast(q, subject) {
+    const bg = bigramsOf(q.question + (q.options || []).join(''));
+    return pastBigramsOf(subject).some(o => jaccard(bg, o) >= COPY_THRESHOLD);
+  }
   function isSimilarToAny(set, others) {
     return others.some(o => jaccard(set, o) >= SIMILAR_THRESHOLD);
   }
@@ -3093,8 +3108,7 @@
     const planAll = aiMockPlan('aiall'), planMix = aiMockPlan('ai');
     const sum = (plan, k) => plan.reduce((t, x) => t + x[k], 0);
     if (!isAiOff()) {
-      sel.add(new Option(`AI予想問題 ${rule.pool}問すべて新作（APIキー必要）`, 'aiall'));
-      sel.add(new Option(`AI予想問題${sum(planMix, 'ai')}問＋過去問${sum(planMix, 'past')}問（APIキー必要）`, 'ai'));
+      sel.add(new Option(`AI予想問題 ${rule.pool}問すべてオリジナル（APIキー必要）`, 'aiall'));
     }
     sel.add(new Option(`過去問ミックス（問題番号ごとに各年度からランダムに抽出）`, 'mix'));
     masterYears.forEach(y => sel.add(new Option(`過去問 ${y}（本試験そのまま）`, `year:${y}`)));
@@ -3140,7 +3154,11 @@
       endAiJob(job);
       if (job.aborted) return;
       questions = built.questions;
-      if (built.filled > 0) sourceLabel += `（AIが作れなかった${built.filled}問は過去問で補充）`;
+      if (built.filled > 0) {
+        // AIが作れなかった問題が残った場合は、過去問で補うかどうかを利用者に確認する
+        if (!confirm(`AIが作れなかった問題が${built.filled}問あります（混雑や、過去問と似すぎていたためです）。\n\nその分を過去問で補って始めますか？\n「キャンセル」を押すと中止します（あとで作り直せます）。`)) { goToStart(); return; }
+        sourceLabel += `（AIが作れなかった${built.filled}問は過去問で補充）`;
+      }
     }
 
     if (questions.length === 0) { alert("出題できる問題がありません。"); return; }
@@ -3258,6 +3276,7 @@
   const AI_JSON_FORMAT = `{"questions": [{"theme": "取り上げたテーマ名", "question": "問題文", "options": ["選択肢の文章1", "選択肢の文章2", "選択肢の文章3", "選択肢の文章4", "選択肢の文章5"], "correct_option": "正解の選択肢の文章（optionsの中のものと一字一句同じ）", "answer": 0, "explanation": "解説"}]}
 ・options は必ず5つにし、先頭に ①・1. などの番号は付けないこと。
 ・answer は正解の番号で、最初の選択肢を 0 とする 0〜4 の整数にすること。
+・過去問の問題文・選択肢を、そのまま、または語句を少し変えただけで出題してはならない。出題例はテーマ・難易度・形式の参考にとどめ、題材・状況設定・数値・選択肢の組立てを新しく考えた「完全なオリジナル問題」にすること。
 ・数式・数値・単位つきの式は、選択肢の中も含めて、必ず $...$ で囲んだLaTeXで書くこと（例: $35.4\\,\\%$）。$ で囲まずに \\text{ } や \\frac{ } だけを書かないこと。
 ・単位の角括弧は [%] のように普通の文字で書き、\\[ \\] は数式の表示以外に使わないこと。`;
 
@@ -3416,8 +3435,8 @@
     const note = document.getElementById('mock-source-note');
     if (!v.startsWith('ai')) { note.textContent = ''; return; }
     note.textContent = currentSubject === 'senmon'
-      ? '※AIが作る問題には、正答や内容の誤りが含まれる場合があります。'
-      : '※AIが作る問題には、正答や内容の誤りが含まれる場合があります（特に計算問題・法令）。迷ったら公式の過去問で確認してください。';
+      ? '※AIが作る問題はすべてオリジナルです（過去問は使いません）。正答や内容の誤りが含まれる場合があります。'
+      : '※AIが作る問題はすべてオリジナルです（過去問は使いません）。正答や内容の誤りが含まれる場合があります（特に計算問題・法令）。迷ったら公式の過去問で確認してください。';
   };
 
   // AI予想問題のセットを作る（分野ごとに4問ずつ生成し、重複を避けるため既出の問題文を渡す）
@@ -3561,13 +3580,28 @@
             break;
           }
         }
+        // 足りない分（使えない問題を除いた分）は、AIにもう一度作らせる（最大3回）。過去問では補わない
+        let stillMissing = missing;
+        for (let round = 0; round < 3 && stillMissing > 0; round++) {
+          throwIfCancelled(job);
+          updateProgress("足りない問題をAIが作り直し中...", 0);
+          try {
+            const more = await fetchMockAIBatch(genre, stillMissing, apiKey, false, examPrevText + batch.map(q => "・" + q.question.replace(/\s+/g, ' ').slice(0, 60)).join("\n") + "\n", retryCallback, pickThemeSeeds(genre, stillMissing, usedThemes), job);
+            batch.push(...more);
+            stillMissing = Math.max(0, stillMissing - more.length);
+          } catch (e) {
+            if (e instanceof AiCancelled) throw e;
+            console.warn("足りない問題の作り直しに失敗しました:", e.message);
+            if (e instanceof AiBusy) break;
+          }
+        }
         batch.forEach(q => {
           examBigrams.push(bigramsOf(q.question + (q.options || []).join('')));
           examPrevText += "・" + q.question.replace(/\s+/g, ' ').slice(0, 60) + "\n";
         });
-        // AIが作れなかった分は過去問で補う
-        filled += missing;
-        const genreQuestions = [...batch, ...pickPastForAI(genre, past + missing, usedThemes)];
+        // それでも作れなかった分だけ、あとで利用者に確認して過去問で補う（既定では補わない）
+        filled += stillMissing;
+        const genreQuestions = [...batch, ...pickPastForAI(genre, past + stillMissing, usedThemes)];
         result.push(...shuffleArray(genreQuestions));
       }
       throwIfCancelled(job);
@@ -3631,7 +3665,8 @@ ${AI_JSON_FORMAT}
         const valid = [];
         list.slice(0, count + 2).forEach((raw, rawIdx) => {
           const r = normalizeAiQuestion(raw);
-          if (r.ok) valid.push({ ...r, rawIdx });
+          if (r.ok && isCopyOfPast(r, currentSubject)) console.warn('AIの問題を除外しました（過去問とほぼ同じ）');
+          else if (r.ok) valid.push({ ...r, rawIdx });
           else console.warn(`AIの問題を除外しました（${r.error}）`);
         });
         if (valid.length === 0) throw new AiNoUsable("AIの応答に使える問題がありませんでした");
@@ -4166,7 +4201,8 @@ ${AI_JSON_FORMAT}`;
     const valid = [];
     list.forEach(raw => {
       const r = normalizeAiQuestion(raw);
-      if (r.ok) valid.push(r);
+      if (r.ok && isCopyOfPast(r, currentSubject)) console.warn('AIの問題を除外しました（過去問とほぼ同じ）');
+      else if (r.ok) valid.push(r);
       else console.warn(`AIの問題を除外しました（${r.error}）`);
     });
     if (valid.length === 0) throw new AiNoUsable("AIが使える問題を作れませんでした。もう一度お試しください。");
