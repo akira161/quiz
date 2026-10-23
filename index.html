@@ -3428,6 +3428,9 @@
 
   // Geminiの呼び出し。思考を浅くして速くする（対応していないモデルなら自動で外して再送する）
   let geminiThinkingOk = true;
+  // 使うAIモデル。常に軽量(Lite)モデルを使う（速く、利用制限にも当たりにくい）。標準モデルへ切り替える場合は、ここを 'gemini-3.5-flash' に変える
+  const AI_MODEL = 'gemini-3.5-flash-lite';
+  const AI_ALWAYS_LITE = AI_MODEL.endsWith('-lite');   // すでに軽量なので、混雑時に軽量モデルへ切り替える処理は不要
   const GEMINI_TIMEOUT_MS = 75000;   // 1回の応答がこれより長くかかったら、待ち続けずにやり直す
   async function geminiPost(modelName, apiKey, payload, signal) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
@@ -3880,7 +3883,7 @@
   }
 
   async function fetchMockAIBatch(genre, count, apiKey, useLiteModel = false, previousQuestionsText = "", onRetry = null, seeds = [], job = null) {
-    const modelName = useLiteModel ? 'gemini-3.5-flash-lite' : 'gemini-3.5-flash';
+    const modelName = AI_MODEL;
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     
     let avoidPrompt = "";
@@ -3918,7 +3921,7 @@ ${AI_JSON_FORMAT}
         if (!res.ok) {
            if (res.status === 429 || res.status === 503) {
                // 503（モデルが混雑）は軽量モデルへ切り替える。429（利用制限）は切り替えても同じ制限なので、指定された時間だけ待つ
-               if (res.status === 503 && !useLiteModel) {
+               if (res.status === 503 && !useLiteModel && !AI_ALWAYS_LITE) {
                    console.warn(`API Busy (${res.status}). Switching to Lite model for this batch.`);
                    if (onRetry) onRetry(retries, true);
                    return fetchMockAIBatch(genre, count, apiKey, true, previousQuestionsText, onRetry, seeds, job); 
@@ -4405,7 +4408,7 @@ ${AI_JSON_FORMAT}
     const topic = document.getElementById('topic-filter').value;
 
     const apiKey = localStorage.getItem('my_gemini_api_key');
-    const modelName = useLiteModel ? 'gemini-3.5-flash-lite' : 'gemini-3.5-flash';
+    const modelName = AI_MODEL;
     const sj = SUBJECTS[currentSubject];
     let topicHint = `${sj.examName}の全般`;
     if (genre && genre !== "all") {
@@ -4463,7 +4466,7 @@ ${AI_JSON_FORMAT}`;
       throw e;
     }
     if (!response.ok) {
-      if (response.status === 503 && !useLiteModel) {
+      if (response.status === 503 && !useLiteModel && !AI_ALWAYS_LITE) {
         console.warn(`高負荷(${response.status})を検知。Liteモデルで再試行します...`);
         return requestPracticeAI(true, signal, attempt);
       }
@@ -4740,7 +4743,7 @@ ${AI_JSON_FORMAT}`;
   // AI詳細解説を生成する（混雑時は軽量モデルに切り替え）
   async function fetchAIExplanation(q, useLiteModel = false) {
     const apiKey = localStorage.getItem('my_gemini_api_key');
-    const modelName = useLiteModel ? 'gemini-3.5-flash-lite' : 'gemini-3.5-flash';
+    const modelName = AI_MODEL;
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
     const sj = SUBJECTS[q.subject] || SUBJECTS.senmon;
@@ -4786,7 +4789,7 @@ ${answerText}`;
     const result = await response.json();
 
     if (!response.ok) {
-      if ((response.status === 429 || response.status === 503) && !useLiteModel) {
+      if ((response.status === 429 || response.status === 503) && !useLiteModel && !AI_ALWAYS_LITE) {
         console.warn(`API制限または高負荷(${response.status})を検知。Liteモデルで解説を生成します...`);
         return fetchAIExplanation(q, true);
       }
