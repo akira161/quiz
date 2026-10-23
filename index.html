@@ -302,6 +302,47 @@
     .mode-card.ai { border-color: rgba(168,85,247,0.5); }
     .mode-card:active { transform: scale(0.98); }
     .ai-off .ai-only, .ai-off #start-ai-btn, .ai-off .ai-regen-btn, .ai-off #ai-explain-btn { display: none !important; }
+
+    /* ===== 模擬試験の印刷（PDF出力） ===== */
+    #print-root { display: none; }
+    @media print {
+      @page { size: A4; margin: 14mm 14mm 16mm; }
+      body.printing { display: block !important; background: #fff !important; color: #000 !important; padding: 0 !important; }
+      body.printing > *:not(#print-root) { display: none !important; }
+      body.printing #print-root { display: block; font-size: 10.5pt; line-height: 1.65; font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif; color: #000; }
+      #print-root * { box-shadow: none !important; }
+      .pp-cover { break-after: page; }
+      .pp-title { text-align: center; font-size: 17pt; font-weight: bold; margin: 8mm 0 2mm; }
+      .pp-sub { text-align: center; font-size: 11pt; margin-bottom: 6mm; }
+      .pp-box { border: 1.2pt solid #000; padding: 4mm 5mm; margin-bottom: 5mm; }
+      .pp-box h4 { margin: 0 0 2mm; font-size: 11pt; }
+      .pp-box ul { margin: 0; padding-left: 5mm; }
+      .pp-name { display: flex; gap: 8mm; margin: 6mm 0; font-size: 11pt; }
+      .pp-name span { flex: 1; border-bottom: 1pt solid #000; padding-bottom: 1mm; }
+      .pp-genre { font-weight: bold; font-size: 11.5pt; border-bottom: 1.2pt solid #000; margin: 6mm 0 3mm; padding-bottom: 1mm; break-after: avoid; }
+      .pp-q { break-inside: avoid; margin-bottom: 6mm; }
+      .pp-qhead { font-weight: bold; margin-bottom: 1.5mm; }
+      .pp-qtext { margin-bottom: 2mm; }
+      .pp-qtext p { margin: 0 0 1.5mm; }
+      .pp-fig { text-align: center; margin: 2mm 0; }
+      .pp-fig img { max-width: 100%; max-height: 90mm; }
+      .pp-opt { display: flex; gap: 2mm; margin: 0.8mm 0; padding-left: 3mm; }
+      .pp-opt > span:first-child { flex: 0 0 6mm; }
+      .pp-opt p { margin: 0; }
+      .pp-sheet { break-before: page; }
+      .pp-sheet table { width: 100%; border-collapse: collapse; font-size: 10.5pt; }
+      .pp-sheet th, .pp-sheet td { border: 0.8pt solid #000; padding: 1mm 2mm; text-align: center; }
+      .pp-sheet th { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .pp-bubble { display: inline-block; width: 6mm; height: 6mm; line-height: 5.4mm; border: 0.8pt solid #000; border-radius: 50%; font-size: 8.5pt; margin: 0 1.2mm; }
+      .pp-bubble.on { background: #000 !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .pp-ans { break-before: page; }
+      .pp-sum { font-size: 12pt; font-weight: bold; margin: 3mm 0 5mm; }
+      .pp-exp { margin: 1mm 0 0 3mm; font-size: 9.8pt; border-left: 1.5pt solid #888; padding-left: 3mm; }
+      .pp-exp p { margin: 0 0 1mm; }
+      .pp-ok { font-weight: bold; }
+      .pp-foot { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 8.5pt; color: #555; }
+      #print-root mjx-container { font-size: 100% !important; }
+    }
     #toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px); background: rgba(15,23,42,0.92); color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 0.9rem; opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s; z-index: 1000; max-width: 90vw; text-align: center; }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     .font-size-row { display: flex; gap: 6px; }
@@ -411,6 +452,7 @@
 
 <div class="container" id="app-container">
   <div id="toast" role="status" aria-live="polite"></div>
+  <div id="print-root"></div>
   <div id="offline-badge" style="display: none; background: var(--trend-bg); color: var(--trend-text); font-size: 0.8rem; font-weight: bold; text-align: center; padding: 6px; border-radius: 8px; margin-bottom: 12px;">📴 オフラインで動作中（過去問演習・模試・まとめノートは使えます。AI機能は通信が必要です）</div>
   
   <div class="top-bar">
@@ -448,6 +490,7 @@
         <li><b>操作のコツ:</b> スタート画面の「出題する問題」「出題数」はボタン1つで切り替えられます。問題画面では、下の「◀ 前」で前の問題に戻れ、キーボードでは 1〜5=選択 / Enter・→=次へ / ←=前へ / B=ブックマーク が使えます。スマホの戻るボタンでも、進捗を保存してスタート画面に戻れます（腕試し中は確認が出ます）。結果画面の「間違えた問題をもう一度解く」で復習できます。文字の大きさは「⚙️ 設定」で変えられます。</li>
         <li><b>ブックマークの活用:</b> ブックマーク画面で、復習状況（未着手→復習中→克服済み）の切替、メモ、検索、状況での絞り込みができます。ブックマークした問題は、解くと自動で状況が更新されます（間違えたら復習中、2回連続正解で克服済み）。「📤 Notion・ファイルに書き出す」で、CSV（Notionのデータベース用）やMarkdown（Notionのページに貼り付け）を作れます。設定の「学習データのバックアップ」で全データを保存・復元できます。</li>
         <li><b>Notionへの自動反映:</b> 設定の「☁️ Notionへ自動で反映」で、ブックマークの変更をNotionのデータベースへ自動で反映できます（中継サーバーの作り方は worker/README.md）。</li>
+        <li><b>腕試しのPDF出力:</b> 腕試しの設定画面の「📄 この出題セットを問題冊子PDFにする」（過去問セット）、試験中の「📄 PDF」、採点後の「📄 解答・解説つきPDF／問題冊子・解答用紙のPDF」から、試験のような体裁（表紙・注意事項・問題・解答用紙・解答解説）のPDFを作れます。出力画面で「PDFとして保存」を選んでください。</li>
         <li><b>弱点克服フィルター:</b> 「未回答の問題」や「過去に間違えた問題」だけを優先して出題し、効率的な復習が可能です。</li>
         <li><b>傾向重視:</b> 出題順序を「傾向重視」にすると、近年よく出題されるテーマが優先的に出題されます。</li>
       </ul>
@@ -707,6 +750,7 @@
     <div id="mock-status-bar" class="mock-bar" style="display: none;">
       <span id="mock-timer" class="mock-timer">⏱ --:--</span>
       <span id="mock-count-label">選択: <span id="mock-answered-count">0</span> / 25 問</span>
+      <button class="chip" onclick="printMockPaper('booklet')" title="この問題セットを、試験の問題冊子・解答用紙の形でPDFに出力します">📄 PDF</button>
       <button id="mock-submit-btn" class="nav-btn mock-submit" onclick="submitMockExam()">提出して採点</button>
       <div id="mock-blocks" class="mock-blocks"></div>
     </div>
@@ -808,6 +852,10 @@
       <!-- 履歴がここに入る -->
     </div>
     
+    <div id="mock-print-btns" style="display: none; margin-top: 24px;">
+      <button class="nav-btn secondary" onclick="printMockPaper('answers')" style="margin-bottom: 8px;">📄 解答・解説つきPDFを出力</button>
+      <button class="nav-btn secondary" onclick="printMockPaper('booklet')">📄 問題冊子・解答用紙のPDFを出力</button>
+    </div>
     <button id="retry-wrong-btn" class="nav-btn" onclick="retryWrong()" style="margin-top: 24px; display: none; background: linear-gradient(135deg, #ef4444, #f97316);">❌ 間違えた問題をもう一度解く</button>
     <button id="result-back-btn" class="nav-btn" onclick="goToStart()" style="margin-top: 12px;">設定・成績画面に戻る</button>
   </div>
@@ -942,6 +990,7 @@
 
     <div id="mock-seen-note" style="font-size: 0.8rem; color: var(--text-muted); margin: 12px 0 8px; line-height: 1.5;"></div>
     <button class="nav-btn" onclick="startMockExam()" style="background: linear-gradient(135deg, #f59e0b, #ea580c);">試験を開始する</button>
+    <button class="nav-btn secondary" id="mock-pdf-btn" onclick="exportMockSetupPdf()" style="margin-top: 12px;">📄 この出題セットを問題冊子PDFにする（試験は始めません）</button>
     <button class="nav-btn secondary" onclick="resetMockSeen()" style="margin-top: 12px; font-size: 0.85rem;">「最近出た問題」の記録をリセット</button>
     <button class="nav-btn secondary" onclick="goToStart()" style="margin-top: 12px;">戻る</button>
   </div>
@@ -2621,6 +2670,101 @@
     if (kind === 'csv') { downloadText(`間違えた問題_${SUBJECT_JA[misSubject]}_${stamp}.csv`, mistakesToCsv(items), 'text/csv;charset=utf-8'); showToast(`CSV（${items.length}問）を保存しました`); }
     else if (kind === 'md') { downloadText(`間違えた問題_${SUBJECT_JA[misSubject]}_${stamp}.md`, mistakesToMarkdown(items), 'text/markdown;charset=utf-8'); showToast(`Markdown（${items.length}問）を保存しました`); }
     else { const ok = await copyText(mistakesToMarkdown(items)); showToast(ok ? `${items.length}問をコピーしました。Notionに貼り付けてください` : 'コピーできませんでした'); }
+  };
+
+
+  // --- 腕試しの問題冊子をPDFに出力（ブラウザの印刷機能で「PDFとして保存」） ---
+  const CIRCLED = ['①', '②', '③', '④', '⑤'];
+  const inlineMd = (q, text) => q.plain ? escapeHtml(text).replace(/\n/g, '<br>') : DOMPurify.sanitize(markedWithMath(String(text ?? ''))).replace(/^<p>|<\/p>\s*$/g, '');
+
+  function paperQuestionHtml(q, n, withAnswer, userIdx) {
+    const body = q.plain ? `<p>${escapeHtml(q.question).replace(/\n/g, '<br>')}</p>` : DOMPurify.sanitize(markedWithMath(q.question));
+    const fig = (q.imageUrl && q.needsFigure) ? `<div class="pp-fig"><img src="${escapeHtml(absUrl(q.imageUrl))}" alt="図"></div>` : '';
+    const opts = (q.options || []).map((o, i) => `<div class="pp-opt"><span>${CIRCLED[i]}</span><span>${inlineMd(q, o)}</span></div>`).join('');
+    let ans = '';
+    if (withAnswer) {
+      const ok = hasAnswerOf(q) && userIdx != null && isCorrectAnswer(q, userIdx);
+      const mark = userIdx == null ? '未解答' : (!hasAnswerOf(q) ? '正答未登録' : ok ? '〇 正解' : '× 不正解');
+      const exp = DOMPurify.sanitize(markedWithMath(String(q.explanation || '').replace(/^【[^】]*】\s*/, '')));
+      const ai = savedExplanations[q.id] ? DOMPurify.sanitize(markedWithMath(savedExplanations[q.id].text)) : '';
+      ans = `<div class="pp-exp"><div class="pp-ok">正解: ${escapeHtml(hasAnswerOf(q) ? correctLabel(q) : '未登録')}　あなたの解答: ${userIdx != null ? CIRCLED[userIdx] : '―'}　${mark}</div>${exp}${ai ? `<div style="margin-top:1mm;"><b>【AI解説】</b>${ai}</div>` : ''}</div>`;
+    }
+    return `<div class="pp-q"><div class="pp-qhead">問 ${n}${isAiQuestion(q) ? '' : `　<span style="font-weight:normal;font-size:9pt;">（${escapeHtml(q.year)} ${escapeHtml(q.qNum)}）</span>`}</div><div class="pp-qtext">${body}</div>${fig}${opts}${ans}</div>`;
+  }
+
+  function buildPaperHtml(kind, ctx) {
+    const { subject, questions, answers, extra, label, minutes } = ctx;
+    const sj = SUBJECTS[subject] || SUBJECTS.senmon, rule = mockRuleOf(subject);
+    const pickMode = rule.pool > rule.total;
+    const d = new Date(), dateStr = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+    const withAns = kind === 'answers';
+    let h = `<div class="pp-cover"><div class="pp-title">技術士第一次試験　${escapeHtml(sj.short)}科目</div><div class="pp-sub">模擬試験${withAns ? '　解答・解説' : '　問題冊子'}<br><span style="font-size:9pt;">${escapeHtml(sj.examName.replace(/^技術士第一次試験/, '').replace(/^【[^】]*】/, ''))}</span></div>`;
+    h += `<div class="pp-name"><span>受験番号</span><span>氏名</span></div>`;
+    h += `<div class="pp-box"><h4>試験の概要</h4><ul><li>実施日: ${dateStr}</li><li>出題セット: ${escapeHtml(label || '')}</li><li>試験時間: ${minutes > 0 ? `${minutes}分` : '制限なし'}</li><li>問題数: ${questions.length}問（${rule.rule.replace(/<[^>]+>/g, '')}）</li><li>合格の目安: ${rule.total}問中${rule.pass}問以上（50%以上）正解</li></ul></div>`;
+    if (!withAns) h += `<div class="pp-box"><h4>注意事項</h4><ul><li>試験開始の合図があるまで、問題冊子を開かないでください。</li><li>解答は、各問の選択肢①〜⑤から最も適切なもの（問によっては、不適切なもの）を1つ選び、解答用紙に記入してください。</li>${pickMode ? '<li>選択問題は、解答した問題の「選択」欄にも印を付けてください。選択数の上限を超えないよう注意してください。</li>' : ''}<li>問題冊子の余白は、計算などに使って構いません。</li></ul></div>`;
+    if (withAns) {
+      const answered = questions.filter(q => answers.hasOwnProperty(q.id));
+      const okN = answered.filter(q => isCorrectAnswer(q, answers[q.id])).length;
+      h += `<div class="pp-sum">${answered.length ? `得点: ${okN} / ${Math.max(answered.length, rule.total)} 問（正答率 ${Math.round(okN / Math.max(answered.length, 1) * 100)}%）　合格ライン: ${rule.pass}問` : 'この試験は未解答です'}</div>`;
+    }
+    h += '</div>';
+    // 問題
+    let lastGenre = null, n = 0;
+    questions.forEach(q => {
+      n++;
+      if (q.genre && q.genre !== lastGenre) { h += `<div class="pp-genre">${escapeHtml(q.genre)}</div>`; lastGenre = q.genre; }
+      const uidx = answers.hasOwnProperty(q.id) ? answers[q.id] : (extra && extra.hasOwnProperty(q.id) ? extra[q.id] : null);
+      h += paperQuestionHtml(q, n, withAns, uidx);
+    });
+    if (!withAns) {
+      // 解答用紙（マーク式）
+      h += `<div class="pp-sheet"><div class="pp-title" style="margin-top:0;">解　答　用　紙</div><div class="pp-name"><span>受験番号</span><span>氏名</span></div><table><thead><tr><th>問</th>${pickMode ? '<th>選択</th>' : ''}<th>解答（選択肢を塗りつぶす）</th></tr></thead><tbody>`;
+      questions.forEach((q, i) => {
+        h += `<tr><td>${i + 1}</td>${pickMode ? '<td>□</td>' : ''}<td>${CIRCLED.slice(0, (q.options || []).length || 5).map(c => `<span class="pp-bubble">${c.replace(/[①②③④⑤]/, m => String(CIRCLED.indexOf(m) + 1))}</span>`).join('')}</td></tr>`;
+      });
+      h += '</tbody></table></div>';
+    }
+    h += `<div class="pp-foot">技術士第一次試験 模擬試験（${escapeHtml(sj.label)}）</div>`;
+    return h;
+  }
+
+  async function printHtml(html, title) {
+    const root = document.getElementById('print-root');
+    if (root.parentElement !== document.body) document.body.appendChild(root);   // 印刷時は、body直下に置いて他を隠す
+    root.innerHTML = html;
+    // 数式の整形と、画像の読み込みが終わってから印刷する
+    try { await typesetMath([root]); } catch (e) {}
+    await Promise.all(Array.from(root.querySelectorAll('img')).map(img => img.complete ? null : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 5000); })));
+    const oldTitle = document.title;
+    document.title = title;
+    document.body.classList.add('printing');
+    const done = () => { document.body.classList.remove('printing'); document.title = oldTitle; root.innerHTML = ''; window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    setTimeout(() => window.print(), 100);
+    setTimeout(done, 20000);   // afterprint が来ない環境（一部のスマホ）でも、画面が隠れたままにならないようにする
+  }
+
+  window.printMockPaper = async function(kind) {
+    if (!mockState || !filteredQuestions.length) { showToast('出力できる問題セットがありません'); return; }
+    if (mockState.phase === 'exam' && kind === 'answers') { showToast('採点後に出力できます'); return; }
+    const ctx = { subject: mockState.subject || currentSubject, questions: filteredQuestions, answers: sessionAnswers || {}, extra: mockState.extraAnswers || {}, label: mockState.sourceLabel, minutes: Math.round((mockState.timeLimitSec || 0) / 60) };
+    const sj = SUBJECTS[ctx.subject] || SUBJECTS.senmon;
+    showToast('PDF出力の画面を開きます。「PDFとして保存」を選んでください');
+    await printHtml(buildPaperHtml(kind, ctx), `模擬試験_${sj.label}_${kind === 'answers' ? '解答解説' : '問題冊子'}_${isoDate(Date.now())}`);
+  };
+
+  // 腕試しの設定画面から、試験を始めずに問題冊子だけPDFにする（過去問セットのみ。AIセットは生成後に試験画面から）
+  window.exportMockSetupPdf = async function() {
+    const source = document.getElementById('mock-source').value;
+    if (source.startsWith('ai')) { showToast('AIの問題セットは、試験を始めたあとに、試験画面の「📄 PDF」から出力できます'); return; }
+    let questions = [];
+    if (source === 'mix') questions = pickMixQuestions();
+    else if (source.startsWith('year:')) { const y = source.slice(5); questions = allQuestions.filter(q => q.year === y).sort((a, b) => slotOrder(a) - slotOrder(b)); }
+    if (!questions.length) { showToast('出題できる問題がありません'); return; }
+    const sj = SUBJECTS[currentSubject];
+    const ctx = { subject: currentSubject, questions, answers: {}, extra: {}, label: document.getElementById('mock-source').selectedOptions[0].text, minutes: parseInt(document.getElementById('mock-time').value, 10) };
+    showToast('PDF出力の画面を開きます。「PDFとして保存」を選んでください');
+    await printHtml(buildPaperHtml('booklet', ctx), `模擬試験_${sj.label}_問題冊子_${isoDate(Date.now())}`);
   };
 
   window.clearBookmarksOfSubject = function() {
@@ -4757,6 +4901,7 @@ ${answerText}`;
       return (has || extraAns.hasOwnProperty(q.id)) && hasAnswerOf(q) && !isCorrectAnswer(q, idx);
     });
     window.retryWrongList = wrongList;
+    document.getElementById('mock-print-btns').style.display = (isMockMode && mockState) ? 'block' : 'none';
     const retryBtn = document.getElementById('retry-wrong-btn');
     retryBtn.style.display = wrongList.length ? '' : 'none';
     retryBtn.textContent = `❌ 間違えた ${wrongList.length} 問をもう一度解く`;
