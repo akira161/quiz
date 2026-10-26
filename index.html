@@ -2990,7 +2990,7 @@
     if (!matomeNotes || currentSubject !== 'senmon') return "";
     const rows = matomeNotes.filter(n => n.isTrend && (!genre || genre === "all" || n.row['分野・ブロック'] === genre));
     if (rows.length === 0) return "";
-    const lines = rows.map(n => `■${n.title}（${n.row['時点・根拠'] || ''}）\n${n.row['最新の数値・内容'] || ''}`).join('\n');
+    const lines = rows.map(n => `■${n.title}（${n.row['時点・根拠'] || ''}）\n${n.row['最新の数値・内容'] || ''}`).join('\n').slice(0, 1500);   // 入力が長いと応答が遅くなるため
     return `\n\n【今年おさえるべき最新動向（統計・法改正）】\n${lines}\n\n作成する問題のうち1問程度は、上記の最新動向を踏まえた問題にしてください。数値や施行時期は上記の内容を正として使い、上記にない最新の数値を推測で作らないでください。`;
   }
 
@@ -3369,9 +3369,9 @@
       if (job.aborted) return;
       questions = built.questions;
       if (built.filled > 0) {
-        // AIが作れなかった問題が残った場合は、過去問で補うかどうかを利用者に確認する
-        if (!confirm(`AIが作れなかった問題が${built.filled}問あります（混雑や、過去問と似すぎていたためです）。\n\nその分を過去問で補って始めますか？\n「キャンセル」を押すと中止します（あとで作り直せます）。`)) { goToStart(); return; }
-        sourceLabel += `（AIが作れなかった${built.filled}問は過去問で補充）`;
+        // AIが作れなかった問題が残った場合: 過去問では補わず、作れた問題だけで始めるかを確認する
+        if (!confirm(`AIが作れた問題は${built.questions.length}問でした（予定より${built.filled}問少ない）。\n（混雑や、問題の品質チェック・重複チェックを通らなかったためです）\n\nこの問題数で始めますか？\n「キャンセル」を押すと中止します（あとで作り直せます）。`)) { goToStart(); return; }
+        sourceLabel += `（AI問題${built.questions.length}問で実施）`;
       }
     }
 
@@ -3468,7 +3468,7 @@
     ]
   };
   const AI_BATCH_SIZE = 4;       // 1回に作らせる問題数（呼び出し回数が少ないほど、利用制限に当たりにくい）
-  const MOCK_CONCURRENCY = 4;    // 同時に作らせる数（利用制限を受けたら自動で減らす）   // 腕試し用のAI問題を同時に作る数
+  const MOCK_CONCURRENCY = 5;    // 同時に作らせる数（利用制限を受けたら自動で減らす）
 
   // Geminiの呼び出し。思考を浅くして速くする（対応していないモデルなら自動で外して再送する）
   let geminiThinkingOk = true;
@@ -3797,7 +3797,7 @@ ${body}`;
   // AI予想問題のセットを作る（分野ごとに4問ずつ生成し、重複を避けるため既出の問題文を渡す）
 
   // --- 腕試しのAI問題セットの先行生成（試験を始めるときに待たなくて済むよう、裏で次のセットを作っておく） ---
-  const AI_MOCK_CACHE_KEY = 'ai_mock_cache_v2';   // 品質チェック導入前に先行生成した問題は使わない
+  const AI_MOCK_CACHE_KEY = 'ai_mock_cache_v3';   // 品質チェック導入前に先行生成した問題は使わない
   const AI_MOCK_CACHE_TTL = 14 * 24 * 3600 * 1000;
   let mockPrep = null;   // 作成中: { subject, job, done, total, msg, promise }
 
@@ -3858,21 +3858,21 @@ ${body}`;
   // opts.quiet=true: 画面を切り替えず、裏で作る（先行生成用）。進み具合は opts.onProgress(done, total, msg) に知らせる
   async function buildAIMockSet(apiKey, plan, job, opts = {}) {
     const quiet = !!opts.quiet;
-    const totalAiNeed = plan.reduce((sum, p) => sum + p.ai, 0);
-    const totalPast = plan.reduce((sum, p) => sum + p.past, 0);
-    if (!quiet) showMockBuildUi(totalAiNeed, totalPast);
+    // 過去問では補わない: 計画の「過去問」分も含めて、すべてAIのオリジナル問題で構成する
+    const need = plan.map(pl => pl.ai + pl.past);
+    const totalNeed = need.reduce((a, b) => a + b, 0);
+    if (!quiet) showMockBuildUi(totalNeed, 0);
 
-    let aiGeneratedCount = 0;
-
-    const updateProgress = (stepMsg, addedCount = 0) => {
+    const accepted = plan.map(() => []);                 // 分野ごとの、合格した問題
+    const acceptedCount = () => accepted.reduce((t, a) => t + a.length, 0);
+    const setProgress = (msg) => {
       if (job.aborted) return;
-      aiGeneratedCount += addedCount;
-      if (quiet) { if (opts.onProgress) opts.onProgress(Math.min(aiGeneratedCount, totalAiNeed), totalAiNeed, stepMsg); return; }
-      const percent = Math.min(100, Math.round((aiGeneratedCount / totalAiNeed) * 100));
-      document.getElementById('ai-progress-text').textContent = stepMsg;
-      document.getElementById('ai-progress-text').style.color = '#a855f7'; 
-      document.getElementById('ai-progress-count').textContent = `${Math.min(aiGeneratedCount, totalAiNeed)} / ${totalAiNeed} 問`;
-      document.getElementById('ai-progress-bar').style.width = `${percent}%`;
+      const done = Math.min(acceptedCount(), totalNeed);
+      if (quiet) { if (opts.onProgress) opts.onProgress(done, totalNeed, msg); return; }
+      document.getElementById('ai-progress-text').textContent = msg;
+      document.getElementById('ai-progress-text').style.color = '#a855f7';
+      document.getElementById('ai-progress-count').textContent = `${done} / ${totalNeed} 問`;
+      document.getElementById('ai-progress-bar').style.width = `${Math.round(done / Math.max(1, totalNeed) * 100)}%`;
     };
 
     let limit = MOCK_CONCURRENCY;   // 同時に作る数（利用制限を受けたら減らす）
@@ -3881,152 +3881,103 @@ ${body}`;
       // 利用制限を受けたら、同時に作る数を半分に減らす（20秒に1回まで）
       if (Date.now() - lastThrottle > 20000) { lastThrottle = Date.now(); limit = Math.max(1, Math.ceil(limit / 2)); }
       if (job.aborted || quiet) return;
-      const modelName = isLite ? "軽量(Lite)モデル" : "標準モデル";
-      document.getElementById('ai-progress-text').textContent = `API混雑中... 再試行(${modelName})`;
-      document.getElementById('ai-progress-text').style.color = '#eab308'; 
+      document.getElementById('ai-progress-text').textContent = 'API混雑中... しばらく待って再試行します';
+      document.getElementById('ai-progress-text').style.color = '#eab308';
     };
 
     try {
-      updateProgress("準備中...", 0);
-      const result = [];
-      const usedThemes = new Set();      // この試験で扱うテーマ（Issue）。重複させない
-      const examBigrams = [];            // この試験の問題の文章（似た問題の検出用）
-      let examPrevText = "";             // この試験で作成済みの問題（AIに重複を避けさせる）
-      let filled = 0;                    // AIが作れず、過去問で補った問題数
-      // 1) 全部の「作る単位（分野×最大4問）」を先に決め、テーマも先に割り当てる
-      const tasks = [];
-      plan.forEach((pl, gi) => {
-        const batches = Math.ceil(pl.ai / AI_BATCH_SIZE);
-        for (let bi = 0; bi < batches; bi++) {
-          const count = Math.min(AI_BATCH_SIZE, pl.ai - bi * AI_BATCH_SIZE);
-          tasks.push({ gi, genre: pl.genre, count, seeds: pickThemeSeeds(pl.genre, count, usedThemes), batch: [], missing: 0 });
-        }
-      });
+      setProgress('準備中...');
+      const t0 = Date.now();
+      const usedThemes = new Set();      // この試験で扱うテーマ。重複させない
+      const examBigrams = [];            // 合格した問題の文章（似た問題の検出用）
+      let prevLines = [];                // 合格した問題の冒頭（AIに重複を避けさせる）
+      let lastBusy = null, emptyWaves = 0, stallWaves = 0;
 
-      // 2) 同時に最大 MOCK_CONCURRENCY 件ずつ、並行してAIに作らせる
-      let failed = false, nextTask = 0, doneTasks = 0, active = 0, gotAny = false, lastBusy = null;
-      const runTask = async (t) => {
+      // 「多めに作って、合格したものだけを使う」方式。足りない分は、次の回でまとめて並行して作り直す
+      for (let wave = 0; wave < 4; wave++) {
         throwIfCancelled(job);
-        let batch;
-        let busy = false;
-        try {
-          batch = await fetchMockAIBatch(t.genre, t.count, apiKey, false, "", retryCallback, t.seeds, job);
-        } catch (e) {
-          if (e instanceof AiBusy) {
-            // 待っても混雑が続く場合: 同時生成をやめて1件ずつにし、この分は後で過去問で補う（ここまでに作った問題は捨てない）
-            busy = true; lastBusy = e; limit = 1; job.maxBusy = 1;   // 以降は待つ回数を減らす
-            console.warn("APIの混雑で作れませんでした。過去問で補います:", e.message);
-            batch = [];
-          } else if (e instanceof AiNoUsable) {
-            console.warn("使える問題が得られませんでした。作り直します:", e.message);
-            batch = [];
-          } else {
-            throw e;   // 通信・認証などのエラーは、そのまま失敗として扱う
-          }
-        }
-        // 使えない問題を除いて足りなくなった分は、別のテーマで作り直す（最大2回まで）
-        for (let attempt = 0; batch.length < t.count && attempt < 2 && !failed && !busy; attempt++) {
-          try {
-            const need = t.count - batch.length;
-            const more = await fetchMockAIBatch(t.genre, need, apiKey, false, "", retryCallback, pickThemeSeeds(t.genre, need, usedThemes), job);
-            batch.push(...more);
-          } catch (e) {
-            if (e instanceof AiCancelled) throw e;
-            if (e instanceof AiBusy) { lastBusy = e; limit = 1; job.maxBusy = 1; }
-            console.warn("足りない問題の作り直しに失敗しました:", e.message);
-            break;
-          }
-        }
-        t.missing = Math.max(0, t.count - batch.length);
-        t.batch = batch;
-        if (batch.length > 0) gotAny = true;
-        doneTasks++;
-        if (!failed) updateProgress(`AIが問題を作成中 (${doneTasks}/${tasks.length}組 完了)...`, batch.length);
-      };
-      const worker = async () => {
-        while (!failed && nextTask < tasks.length) {
-          if (active >= limit) { await aiSleep(job, 400); throwIfCancelled(job); continue; }   // 混雑したら同時数を絞る
-          const t = tasks[nextTask++];
-          active++;
-          try { await runTask(t); } catch (e) { failed = true; throw e; } finally { active--; }
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(MOCK_CONCURRENCY, tasks.length) }, worker));
-      // 1問もAIが作れなかったときだけ、失敗として知らせる（一部でも作れていれば、残りは過去問で補う）
-      if (!gotAny && lastBusy && totalAiNeed > 0) throw lastBusy;
+        const deficits = need.map((n, gi) => Math.max(0, n - accepted[gi].length));
+        const totalDef = deficits.reduce((a, b) => a + b, 0);
+        if (totalDef === 0) break;
+        if (wave > 0 && Date.now() - t0 > 150000 && totalDef <= 3) break;   // 時間がかかりすぎたら、わずかな不足は諦める
 
-      // 2.5) 品質チェック: 別のAI呼び出しで全問を確認し、誤りが2つあるなど怪しい問題を除く（除いた分は、下で作り直す）
-      if (isStrictAi()) {
-        throwIfCancelled(job);
-        updateProgress("問題の品質をAIが確認中...", 0);
-        const allQs = tasks.flatMap(t => t.batch);
-        const okQs = new Set(await filterVerified(allQs, job));
-        tasks.forEach(t => { const kept = t.batch.filter(q => okQs.has(q)); t.missing += t.batch.length - kept.length; t.batch = kept; });
-      }
-
-      // 3) 分野ごとにまとめ、似すぎた問題を作り直し、足りない分は過去問で補う
-      for (let gi = 0; gi < plan.length; gi++) {
-        const { genre, past } = plan[gi];
-        const mine = tasks.filter(t => t.gi === gi);
-        const batch = mine.flatMap(t => t.batch);
-        const missing = mine.reduce((sum, t) => sum + t.missing, 0);
-
-        const findSimilar = () => {
-          const seenInBatch = [];
-          const idx = [];
-          batch.forEach((q, i) => {
-            const bg = bigramsOf(q.question + (q.options || []).join(''));
-            if (isSimilarToAny(bg, examBigrams) || isSimilarToAny(bg, seenInBatch)) idx.push(i);
-            seenInBatch.push(bg);
-          });
-          return idx;
-        };
-        for (let attempt = 0; attempt < 1; attempt++) {
-          const dupIdx = findSimilar();
-          if (dupIdx.length === 0) break;
-          throwIfCancelled(job);
-          updateProgress("似た問題を作り直し中...", 0);
-          try {
-            const reSeeds = pickThemeSeeds(genre, dupIdx.length, usedThemes);
-            const prev = examPrevText + batch.map(q => "・" + q.question.replace(/\s+/g, ' ').slice(0, 60)).join("\n") + "\n";
-            const redo = await fetchMockAIBatch(genre, dupIdx.length, apiKey, false, prev, retryCallback, reSeeds, job);
-            const redoOk = await filterVerified(redo, job);
-            dupIdx.forEach((di, k) => { if (redoOk[k]) batch[di] = redoOk[k]; });
-          } catch (e) {
-            if (e instanceof AiCancelled) throw e;
-            console.warn("作り直しに失敗したため、そのまま使います:", e.message);
-            break;
+        const before = acceptedCount();
+        // 1) 作る単位（分野ごとに最大5問ずつ）を決める。不合格になる分を見込んで、多めに作らせる
+        const tasks = [];
+        deficits.forEach((d, gi) => {
+          if (d <= 0) return;
+          const ask = Math.max(d + 1, Math.ceil(d * (wave === 0 ? 1.35 : 1.7)));
+          const nb = Math.ceil(ask / 5), base = Math.floor(ask / nb), extra = ask % nb;
+          for (let k = 0; k < nb; k++) {
+            const count = base + (k < extra ? 1 : 0);
+            tasks.push({ gi, genre: plan[gi].genre, count, seeds: pickThemeSeeds(plan[gi].genre, count, usedThemes), cands: [] });
           }
-        }
-        // 足りない分（使えない問題を除いた分）は、AIにもう一度作らせる（最大3回）。過去問では補わない
-        let stillMissing = missing;
-        for (let round = 0; round < 3 && stillMissing > 0; round++) {
-          throwIfCancelled(job);
-          updateProgress("足りない問題をAIが作り直し中...", 0);
-          try {
-            const more = await fetchMockAIBatch(genre, stillMissing, apiKey, false, examPrevText + batch.map(q => "・" + q.question.replace(/\s+/g, ' ').slice(0, 60)).join("\n") + "\n", retryCallback, pickThemeSeeds(genre, stillMissing, usedThemes), job);
-            const moreOk = await filterVerified(more, job);
-            batch.push(...moreOk);
-            stillMissing = Math.max(0, stillMissing - moreOk.length);
-          } catch (e) {
-            if (e instanceof AiCancelled) throw e;
-            console.warn("足りない問題の作り直しに失敗しました:", e.message);
-            if (e instanceof AiBusy) break;
-          }
-        }
-        batch.forEach(q => {
-          examBigrams.push(bigramsOf(q.question + (q.options || []).join('')));
-          examPrevText += "・" + q.question.replace(/\s+/g, ' ').slice(0, 60) + "\n";
         });
-        // それでも作れなかった分だけ、あとで利用者に確認して過去問で補う（既定では補わない）
-        filled += stillMissing;
-        const genreQuestions = [...batch, ...pickPastForAI(genre, past + stillMissing, usedThemes)];
-        result.push(...shuffleArray(genreQuestions));
+        setProgress(wave === 0 ? 'AIが問題を作成中...' : `足りない${totalDef}問をAIが作り直し中...（${wave}回目）`);
+
+        // 2) 同時に最大 MOCK_CONCURRENCY 件ずつ、並行して作らせる
+        let nextTask = 0, active = 0, failed = false, doneTasks = 0;
+        const prevText = prevLines.slice(-40).join('\n') + (prevLines.length ? '\n' : '');
+        const runTask = async (t) => {
+          try {
+            t.cands = await fetchMockAIBatch(t.genre, t.count, apiKey, false, prevText, retryCallback, t.seeds, job);
+          } catch (e) {
+            if (e instanceof AiBusy) { lastBusy = e; limit = 1; job.maxBusy = 1; }
+            else if (!(e instanceof AiNoUsable)) throw e;     // 通信・認証などのエラーは、そのまま失敗として扱う
+            console.warn('この組は作れませんでした:', e.message);
+          }
+          doneTasks++;
+          if (!failed) setProgress(`AIが問題を作成中 (${doneTasks}/${tasks.length}組 完了)...`);
+        };
+        const worker = async () => {
+          while (!failed && nextTask < tasks.length) {
+            if (active >= limit) { await aiSleep(job, 400); throwIfCancelled(job); continue; }   // 混雑したら同時数を絞る
+            const t = tasks[nextTask++];
+            active++;
+            try { await runTask(t); } catch (e) { failed = true; throw e; } finally { active--; }
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(MOCK_CONCURRENCY, tasks.length) }, worker));
+        throwIfCancelled(job);
+
+        // 3) 似た問題（すでに合格した問題・同じ回の別の問題と、文面が近いもの）を除く
+        const cands = tasks.flatMap(t => t.cands.map(q => ({ q, gi: t.gi })));
+        if (cands.length === 0) { if (++emptyWaves >= 2) break; continue; }
+        emptyWaves = 0;
+        const seenBg = [], uniq = [];
+        for (const c of cands) {
+          const bg = bigramsOf(c.q.question + (c.q.options || []).join(''));
+          if (isSimilarToAny(bg, examBigrams) || isSimilarToAny(bg, seenBg)) continue;
+          seenBg.push(bg); c.bg = bg; uniq.push(c);
+        }
+
+        // 4) 品質チェック（別のAI呼び出し）。全部をまとめて確認する
+        if (isStrictAi()) setProgress('問題の品質をAIが確認中...');
+        const okSet = new Set(await filterVerified(uniq.map(c => c.q), job));
+
+        // 5) 合格したものを、分野ごとに必要な数だけ採用する
+        uniq.forEach(c => {
+          if (!okSet.has(c.q) || accepted[c.gi].length >= need[c.gi]) return;
+          accepted[c.gi].push(c.q);
+          examBigrams.push(c.bg);
+          prevLines.push('・' + c.q.question.replace(/\s+/g, ' ').slice(0, 60));
+        });
+        setProgress(`${acceptedCount()}問が完成`);
+        // 1回分作り直しても1問も増えない状態が続くなら、AIを叩き続けずに打ち切る
+        if (acceptedCount() === before) { if (++stallWaves >= 2) break; } else stallWaves = 0;
       }
+
       throwIfCancelled(job);
-      updateProgress("全問題の準備完了！", 0);
+      if (acceptedCount() === 0) {
+        if (lastBusy) throw lastBusy;
+        throw new Error('AIが使える問題を作れませんでした。もう一度お試しください');
+      }
+      setProgress('全問題の準備完了！');
+      const result = [];
+      accepted.forEach(list => result.push(...shuffleArray(list.slice())));
+      const shortage = Math.max(0, totalNeed - acceptedCount());
       // 適性科目は分野ごとの区切りがないので、全体を混ぜる
-      return { questions: mockRuleOf(currentSubject).allRequired ? shuffleArray(result) : result, filled };
+      return { questions: mockRuleOf(currentSubject).allRequired ? shuffleArray(result) : result, filled: shortage };
     } finally {
       if (!quiet) hideAiLoading();
     }
@@ -4044,8 +3995,8 @@ ${body}`;
     // 過去問のテーマを1問ずつ指定する
     let seedPrompt = "";
     if (seeds.length > 0) {
-      seedPrompt = `\n\n【テーマの指定】\n次の${seeds.length}つのテーマについて、1テーマにつき1問ずつ、この順番で作成してください。出題例は参考で、同じ問題にしてはいけません。\n` +
-        seeds.map((sd, i) => `${i + 1}. ${sd.theme}（過去の出題例: ${sd.hint}）`).join('\n');
+      seedPrompt = `\n\n【テーマの指定】\n次の${seeds.length}つのテーマについて、1テーマにつき1問ずつ、この順番で作成してください。過去問に似せず、新しい題材・条件で作ってください。\n` +
+        seeds.map((sd, i) => `${i + 1}. ${sd.theme}`).join('\n');
     }
     // 最近の腕試しでAIが扱ったテーマは避ける
     const recent = Array.from(recentThemeSet(currentSubject)).slice(-40);
