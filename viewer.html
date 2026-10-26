@@ -97,6 +97,8 @@
     .sheet-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
 
     .note-list { display: flex; flex-direction: column; gap: 16px; }
+    @media (min-width: 900px) { .container { max-width: 1200px; } .note-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
+    @media (min-width: 900px) and (max-width: 1199px) { .container { max-width: 960px; } }
     .note-card {
         padding: 20px; border: 1px solid var(--border); border-radius: var(--radius);
         background: var(--bg); transition: 0.2s; overflow-x: auto;
