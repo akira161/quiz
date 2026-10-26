@@ -520,6 +520,7 @@
         <li><b>Notionへの自動反映:</b> ブックマークや間違えた問題を、Notionのデータベースへ自動で反映できます。準備と使い方は、下の「5. Notion連携」を見てください。</li>
         <li><b>腕試しのPDF出力:</b> 腕試しの設定画面の「📄 この出題セットを問題冊子PDFにする」（過去問セット）、試験中の「📄 PDF」、採点後の「📄 解答・解説つきPDF／問題冊子・解答用紙のPDF」から、試験のような体裁（表紙・注意事項・問題・解答用紙・解答解説）のPDFを作れます。出力画面で「PDFとして保存」を選んでください。</li>
         <li><b>AI問題セットの先行生成:</b> 腕試しの設定画面でAI問題セットを選ぶと、裏で問題を先に作り始めます（「✅ 準備ができています」と出たら、すぐに開始できます）。試験を始めると、次回用のセットを自動で作っておきます。作った問題はこの端末に最長14日間保存されます。</li>
+        <li><b>解説は後から作られます:</b> 問題を速く作るため、AI問題の詳しい解説は、問題を解いている間に裏で作ります。腕試しでは試験中に作られ、採点のころには揃っています。網羅特訓で、答えた直後にまだ解説が届いていないときは、短い根拠が出て、数秒後に詳しい解説に切り替わります。</li>
         <li><b>AI問題の品質チェック:</b> AIが作った問題は、「誤りが2つある」「正解が一つに決まらない」といった問題を避けるため、別のAI呼び出しで正解を知らない状態から解き直して確認し、食い違う問題を除きます（設定でオフにもできます。オフだと速くなりますが、質が下がることがあります）。</li>
         <li><b>弱点克服フィルター:</b> 「未回答の問題」や「過去に間違えた問題」だけを優先して出題し、効率的な復習が可能です。</li>
         <li><b>傾向重視:</b> 出題順序を「傾向重視」にすると、近年よく出題されるテーマが優先的に出題されます。</li>
@@ -3422,6 +3423,7 @@
     isMockMode = true;
     isAiMode = settings.source.startsWith('ai');
     filteredQuestions = questions;
+    fillExplanations(questions);   // 試験中に、裏で解説を作る
     sessionAnswers = {};
     mockAnsweredCount = 0;
     curIdx = 0;
@@ -3606,18 +3608,99 @@ ${body}`;
     return list.filter((_, i) => keep[i]);
   }
 
+
+  // --- 解説の後づけ生成: 問題の生成を速くするため、詳しい解説は、問題を解いている間に別に作る ---
+  const expInFlight = new WeakSet();
+  async function requestExplanations(chunk, apiKey) {
+    const sj = SUBJECTS[chunk[0].subject] || SUBJECTS[currentSubject] || SUBJECTS.senmon;
+    const body = chunk.map((q, i) => `【問${i + 1}】${q.question}\n` + q.options.map((o, k) => `${k + 1}. ${o}`).join('\n') + `\n正解: ${correctLabel(q)}` + (q.explanation ? `\n根拠メモ: ${String(q.explanation).replace(/^【[^】]*】\s*/, '')}` : '')).join('\n\n');
+    const prompt = `あなたは${sj.examName}の専門講師です。次の問題それぞれについて、解説を書いてください。
+・正解の根拠と、主な誤りの選択肢がなぜ誤りか（または、なぜ正解でないか）を、全体で200〜280字で簡潔にまとめる。
+・正解は問題に示したとおりとし、変えない。
+・Markdown記法を使ってよい。数式は必ずLaTeX記法で、インラインは $...$ 、ブロックは $$...$$ で囲む。
+出力は次のJSONだけにしてください。
+{"explanations": [{"no": 1, "text": "解説"}]}
+
+${body}`;
+    const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { response_mime_type: 'application/json' } };
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await waitAiPause(null);
+      const { res, data } = await geminiPost(AI_MODEL, apiKey, payload);
+      if (res.status === 429 || res.status === 503) {
+        const wait = retryDelayMs(res, data);
+        aiPauseUntil = Math.max(aiPauseUntil, Date.now() + wait);
+        continue;
+      }
+      if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+      const txt = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const obj = JSON.parse(txt.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+      return Array.isArray(obj.explanations) ? obj.explanations : (Array.isArray(obj) ? obj : []);
+    }
+    throw new Error('混雑のため解説を作れませんでした');
+  }
+  window.fillExplanations = async function(list) {
+    if (isAiOff()) return;
+    const apiKey = localStorage.getItem('my_gemini_api_key');
+    if (!apiKey || navigator.onLine === false) return;
+    const todo = list.filter(q => q && q.needExp && !expInFlight.has(q) && (q.expTries || 0) < 3);
+    if (!todo.length) return;
+    todo.forEach(q => { expInFlight.add(q); q.expTries = (q.expTries || 0) + 1; });
+    const chunks = [];
+    for (let i = 0; i < todo.length; i += 6) chunks.push(todo.slice(i, i + 6));
+    let next = 0;
+    const worker = async () => {
+      while (next < chunks.length) {
+        const chunk = chunks[next++];
+        try {
+          const results = await requestExplanations(chunk, apiKey);
+          chunk.forEach((q, i) => {
+            const r = results.find(x => +x.no === i + 1) || results[i];
+            const text = r && String(r.text || '').trim();
+            if (text) { q.explanation = `【AI解説】\n${fixMathText(text)}`; q.needExp = false; }
+          });
+        } catch (e) {
+          console.warn('解説の作成に失敗しました（あとで再試行します）:', e.message);
+        } finally {
+          chunk.forEach(q => expInFlight.delete(q));
+          onExplanationsUpdated(chunk);
+        }
+      }
+    };
+    await Promise.all([worker(), worker()]);
+  };
+  // 解説ができたら、保存済みの控え（ブックマーク・腕試し履歴・中断データ）と、いま開いている画面を更新する
+  function onExplanationsUpdated(chunk) {
+    const done = chunk.filter(q => !q.needExp);
+    if (!done.length) return;
+    const byId = new Map(done.map(q => [q.id, q]));
+    Object.entries(userMemory.bookmarks || {}).forEach(([id, e]) => { const q = byId.get(id); if (q && e.snap) e.snap.explanation = q.explanation; });
+    (userMemory.mockExams || []).forEach(ex => (ex.questions || []).forEach(q => { const f = byId.get(q.id); if (f && q !== f) { q.explanation = f.explanation; q.needExp = false; } }));
+    if (userMemory.savedSession && userMemory.savedSession.filteredQuestions) {
+      const sm = new Map(userMemory.savedSession.filteredQuestions.map(q => [q.id, q]));
+      done.forEach(q => { const t = sm.get(q.id); if (t && t !== q) { t.explanation = q.explanation; t.needExp = false; } });
+    }
+    saveUserData();
+    const scr = activeScreenId();
+    if (scr === 'screen-quiz' && !isMockExamActive()) {
+      const cur = filteredQuestions[curIdx];
+      if (cur && byId.has(cur.id) && sessionAnswers.hasOwnProperty(cur.id) && document.getElementById('ai-loading').style.display !== 'block') renderQuestion();
+    } else if (scr === 'screen-result' && filteredQuestions.some(q => byId.has(q.id))) {
+      try { window.renderHistoryUI(filteredQuestions); } catch (e) {}
+    }
+  }
+
   // AIに出力させるJSONの形（正答は「番号」と「正解の選択肢の文章」の両方を出させ、食い違いを検出できるようにする）
-  const AI_JSON_FORMAT = `{"questions": [{"theme": "取り上げたテーマ名", "question": "問題文", "options": ["選択肢の文章1", "選択肢の文章2", "選択肢の文章3", "選択肢の文章4", "選択肢の文章5"], "correct_option": "正解の選択肢の文章（optionsの中のものと一字一句同じ）", "answer": 0, "type": "不適切を選ぶ または 適切を選ぶ または その他", "judgements": ["正", "正", "誤", "正", "正"], "explanation": "解説"}]}
+  const AI_JSON_FORMAT = `{"questions": [{"theme": "取り上げたテーマ名", "question": "問題文", "options": ["選択肢の文章1", "選択肢の文章2", "選択肢の文章3", "選択肢の文章4", "選択肢の文章5"], "correct_option": "正解の選択肢の文章（optionsの中のものと一字一句同じ）", "answer": 0, "type": "不適切を選ぶ または 適切を選ぶ または その他", "judgements": ["正", "正", "誤", "正", "正"], "reason": "正解の根拠（40字以内）"}]}
 ・options は必ず5つにし、先頭に ①・1. などの番号は付けないこと。
 ・answer は正解の番号で、最初の選択肢を 0 とする 0〜4 の整数にすること。
 ・type は、問題が「不適切（誤り）なものを選ぶ」形式か、「適切（正しい）ものを選ぶ」形式か、それ以外（計算・組合せなど）かを書く。
-・judgements は、options の各選択肢（先頭から5つ）が、事実として正しい記述なら「正」、誤りなら「誤」を書く（計算問題は、その値が正しい答えなら「正」）。必ず、解説の内容と一致させること。
+・judgements は、options の各選択肢（先頭から5つ）が、事実として正しい記述なら「正」、誤りなら「誤」を書く（計算問題は、その値が正しい答えなら「正」）。必ず、正解の根拠（reason）と一致させること。
 【問題の質について（重要）】
 ・「不適切なものを選ぶ」問題: 誤りの選択肢はちょうど1つだけにする。残り4つは、教科書・法令・規格で確実に正しいと言える記述だけにし、「正しいか曖昧」「条件によっては誤り」という記述を混ぜない。誤りの選択肢は、専門家が見れば明確に誤りと言えるものにする。
 ・「適切なものを選ぶ」問題: 正しい選択肢はちょうど1つだけにする。残り4つは、明確に誤りと言える記述にする。
 ・事実・数値・条文に自信がない内容は出題しない。実在しない法令・規格・用語を作らない。「必ず」「すべて」などの断定語で、正誤が曖昧になる文を作らない。
 ・出題後に、各選択肢を自分で見直し、正解が1つに決まることを確かめてから出力する。
-・出力は簡潔にすること。問題文は必要最小限の長さにし、explanation は正解の根拠と主な誤りの要点を、全体で250字以内にまとめる。
+・出力は簡潔にすること。問題文は必要最小限の長さにする。詳しい解説は書かない（解説は別に作る）。
 ・過去問の問題文・選択肢を、そのまま、または語句を少し変えただけで出題してはならない。出題例はテーマ・難易度・形式の参考にとどめ、題材・状況設定・数値・選択肢の組立てを新しく考えた「完全なオリジナル問題」にすること。
 ・数式・数値・単位つきの式は、選択肢の中も含めて、必ず $...$ で囲んだLaTeXで書くこと（例: $35.4\\,\\%$）。$ で囲まずに \\text{ } や \\frac{ } だけを書かないこと。
 ・単位の角括弧は [%] のように普通の文字で書き、\\[ \\] は数式の表示以外に使わないこと。`;
@@ -3786,7 +3869,8 @@ ${body}`;
       question: fixMathText(question),
       options: options.map(fixMathText),
       answer: idx,
-      explanation: fixMathText(String(raw.explanation ?? '').trim()) || '（解説なし）',
+      explanation: fixMathText(String(raw.explanation ?? raw.reason ?? '').trim()) || '（解説なし）',
+      needExp: !String(raw.explanation ?? '').trim(),   // 詳しい解説は、問題を解いている間に別のAI呼び出しで作る
       theme: String(raw.theme ?? '').trim()
     };
   }
@@ -3833,7 +3917,7 @@ ${body}`;
   // AI予想問題のセットを作る（分野ごとに4問ずつ生成し、重複を避けるため既出の問題文を渡す）
 
   // --- 腕試しのAI問題セットの先行生成（試験を始めるときに待たなくて済むよう、裏で次のセットを作っておく） ---
-  const AI_MOCK_CACHE_KEY = 'ai_mock_cache_v3';   // 品質チェック導入前に先行生成した問題は使わない
+  const AI_MOCK_CACHE_KEY = 'ai_mock_cache_v4';   // 品質チェック導入前に先行生成した問題は使わない
   const AI_MOCK_CACHE_TTL = 14 * 24 * 3600 * 1000;
   let mockPrep = null;   // 作成中: { subject, job, done, total, msg, promise }
 
@@ -4093,7 +4177,8 @@ ${AI_JSON_FORMAT}
           question: q.question,
           options: q.options,
           answer: q.answer,
-          explanation: `【AI解説】${useLiteModel ? '(Lite)' : ''}\n${q.explanation}`,
+          explanation: `【AI解説】\n${q.explanation}`,
+          needExp: q.needExp,
           imageUrl: ""
         }));
       } catch (e) {
@@ -4685,7 +4770,8 @@ ${AI_JSON_FORMAT}`;
             question: qData.question,
             options: qData.options,
             answer: qData.answer,
-            explanation: `【AIによる解説】${lite ? ' (Liteモデル)' : ''}\n${qData.explanation}`,
+            explanation: `【AIによる解説】\n${qData.explanation}`,
+            needExp: qData.needExp,
             imageUrl: "" 
           });
       });
@@ -4697,6 +4783,7 @@ ${AI_JSON_FORMAT}`;
       
       curIdx = startIndex;
       renderQuestion();
+      fillExplanations(filteredQuestions.slice(startIndex));   // 解いている間に、裏で解説を作る
       startPracticePrefetch();   // 解いている間に、次の5問を裏で作っておく
     } catch(e) {
       if (e instanceof AiCancelled || e.name === 'AbortError' || job.aborted) return;   // 「生成をやめる」で中止した場合は何もしない
@@ -4808,7 +4895,8 @@ ${AI_JSON_FORMAT}`;
         resStatus.innerHTML = '<span style="color:var(--danger-text);">❌ 不正解</span>' + (correctIndexes(q).length > 1 ? `<span style="font-size:0.85rem;color:var(--text-muted);font-weight:normal;">（正解は ${correctLabel(q)}）</span>` : '');
       }
       
-      renderContent(q.explanation, 'exp-text');
+      renderContent(q.explanation + (q.needExp ? '\n\n⏳ *詳しい解説を作成中です。数秒後に自動で表示されます*' : ''), 'exp-text');
+      if (q.needExp) fillExplanations([q]);
       document.getElementById('exp-box').classList.add('show');
       
       if (savedExplanations[q.id]) {
@@ -5086,6 +5174,7 @@ ${answerText}`;
     }
 
     window.isViewingPastMock = false;
+    setTimeout(() => fillExplanations(saved.filteredQuestions || []), 500);
     isMockMode = saved.isMockMode;
     isAiMode = saved.isAiMode;
     filteredQuestions = saved.filteredQuestions;
@@ -5147,6 +5236,7 @@ ${answerText}`;
 
   window.showResults = function() {
     cancelPracticePrefetch();
+    fillExplanations(filteredQuestions);   // 解説がまだ届いていない問題があれば、作る
     stopMockTimer();
     const analysisBox = document.getElementById('mock-analysis');
 
@@ -5248,6 +5338,7 @@ ${answerText}`;
     isMockMode = true;
     isAiMode = true; 
     filteredQuestions = exam.questions;
+    fillExplanations(filteredQuestions);
     sessionAnswers = exam.answers;
     mockAnsweredCount = Object.keys(sessionAnswers).length;
     const extraAnswers = exam.extraAnswers || {};
@@ -5396,7 +5487,7 @@ ${answerText}`;
       markWrap.append(markEl, bmBtn);
       
       const expContainer = item.querySelector('.hist-exp-content');
-      expContainer.innerHTML = DOMPurify.sanitize(markedWithMath(q.explanation));
+      expContainer.innerHTML = DOMPurify.sanitize(markedWithMath(q.explanation + (q.needExp ? '\n\n⏳ 詳しい解説を作成中です…' : '')));
       const extras = document.createElement('div');
       expContainer.after(extras);
       renderHistoryExtras(extras, q);
