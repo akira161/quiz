@@ -521,6 +521,7 @@
         <li><b>腕試しのPDF出力:</b> 腕試しの設定画面の「📄 この出題セットを問題冊子PDFにする」（過去問セット）、試験中の「📄 PDF」、採点後の「📄 解答・解説つきPDF／問題冊子・解答用紙のPDF」から、試験のような体裁（表紙・注意事項・問題・解答用紙・解答解説）のPDFを作れます。出力画面で「PDFとして保存」を選んでください。</li>
         <li><b>AI問題セットの先行生成:</b> 腕試しの設定画面でAI問題セットを選ぶと、裏で問題を先に作り始めます（「✅ 準備ができています」と出たら、すぐに開始できます）。試験を始めると、次回用のセットを自動で作っておきます。作った問題はこの端末に最長14日間保存されます。</li>
         <li><b>解説は後から作られます:</b> 問題を速く作るため、AI問題の詳しい解説は、問題を解いている間に裏で作ります。腕試しでは試験中に作られ、採点のころには揃っています。網羅特訓で、答えた直後にまだ解説が届いていないときは、短い根拠が出て、数秒後に詳しい解説に切り替わります。</li>
+        <li><b>同じ問題の重複を避ける:</b> AIが出した問題は、この端末に記録されます（問題文と、問うている知識）。次に作るときは、記録にある問題と、問題文や知識が似ているものを除き、AIにも「これらは出さない」と伝えます。腕試しと網羅特訓で共通です。記録は設定の「AIの出題記録をリセットする」で消せます。</li>
         <li><b>AI問題の品質チェック:</b> AIが作った問題は、「誤りが2つある」「正解が一つに決まらない」といった問題を避けるため、別のAI呼び出しで正解を知らない状態から解き直して確認し、食い違う問題を除きます（設定でオフにもできます。オフだと速くなりますが、質が下がることがあります）。</li>
         <li><b>弱点克服フィルター:</b> 「未回答の問題」や「過去に間違えた問題」だけを優先して出題し、効率的な復習が可能です。</li>
         <li><b>傾向重視:</b> 出題順序を「傾向重視」にすると、近年よく出題されるテーマが優先的に出題されます。</li>
@@ -812,6 +813,8 @@
         <div class="filter-group">
           <div style="font-size: 0.9rem; margin-bottom: 8px;">保存したAI解説: <b id="ai-saved-count">0</b> 件</div>
           <button class="nav-btn secondary" onclick="clearSavedExplanations()" style="margin-bottom: 12px;">保存したAI解説を削除する</button>
+          <div class="ai-only" style="font-size: 0.9rem; margin-bottom: 8px;">AIが過去に出した問題の記録（重複を避けるため）: <b id="ai-hist-count">0</b> 件</div>
+          <button class="nav-btn secondary ai-only" onclick="resetAiHistory()" style="margin-bottom: 12px;">AIの出題記録をリセットする</button>
           <button class="nav-btn danger" onclick="resetHistory()">学習記録をリセットする</button>
           <div style="font-size: 0.8rem; margin-top: 8px; color: var(--text-muted); line-height: 1.5;">
             ※総解答数、正解数、各問題の正誤履歴がすべて消去されます。<br>
@@ -1328,6 +1331,7 @@
     applyTheme(); 
     applyPrefs();
     loadNotionCfg();
+    updateAiHistCount();
     scheduleNotionSync(4000);
     updateMemoryUI(); 
     loadApiKey();
@@ -3139,6 +3143,58 @@
     a.forEach(x => { if (b.has(x)) inter++; });
     return inter / (a.size + b.size - inter);
   }
+
+  // --- AIが過去に出した問題の記録（重複を避けるため。腕試し・網羅特訓の全体で共有） ---
+  const AI_HIST_KEY = 'ai_history';
+  const AI_HIST_MAX = 400;
+  let aiHist = null;
+  const aiHistBgCache = {};
+  function loadAiHist() { try { aiHist = JSON.parse(localStorage.getItem(AI_HIST_KEY) || '{}') || {}; } catch (e) { aiHist = {}; } }
+  function aiHistOf(sub) { if (!aiHist) loadAiHist(); return (aiHist[sub] = aiHist[sub] || []); }
+  function saveAiHist() {
+    try { localStorage.setItem(AI_HIST_KEY, JSON.stringify(aiHist)); }
+    catch (e) { Object.keys(aiHist).forEach(k => { aiHist[k] = aiHist[k].slice(-150); }); try { localStorage.setItem(AI_HIST_KEY, JSON.stringify(aiHist)); } catch (e2) {} }
+  }
+  const qHistText = q => (String(q.question) + ' ' + (q.options || []).join(' ')).replace(/\s+/g, ' ').slice(0, 260);
+  function recordAiHist(sub, genre, qs) {
+    const list = aiHistOf(sub);
+    qs.forEach(q => list.push({ s: qHistText(q), r: String(q.reason || '').slice(0, 80), t: q.theme || '', g: genre || q.genre || '' }));
+    while (list.length > AI_HIST_MAX) list.shift();
+    delete aiHistBgCache[sub];
+    saveAiHist();
+  }
+  function aiHistBgs(sub) {
+    const list = aiHistOf(sub), c = aiHistBgCache[sub];
+    if (c && c.n === list.length) return c.v;
+    const v = list.map(e => ({ s: bigramsOf(e.s), r: e.r && e.r.length >= 8 ? bigramsOf(e.r) : null }));
+    aiHistBgCache[sub] = { n: list.length, v };
+    return v;
+  }
+  // 過去に出した問題と、問題文が似ている、または、正解の根拠（問うている知識）が似ている問題か
+  function isRepeatOfHistory(q, sub, extra) {
+    const bs = bigramsOf(qHistText(q));
+    const br = q.reason && String(q.reason).length >= 8 ? bigramsOf(String(q.reason)) : null;
+    const hit = h => jaccard(bs, h.s) >= 0.4 || (br && h.r && jaccard(br, h.r) >= 0.45);
+    return aiHistBgs(sub).some(hit) || (extra || []).some(hit);
+  }
+  // プロンプトに添える「すでに出した問題（同じ知識を問わない）」の一覧。直近のものと、ランダムな過去のもの
+  function historyPrompt(sub, genre) {
+    const all = aiHistOf(sub).filter(e => !genre || !e.g || e.g === genre);
+    if (!all.length) return '';
+    const recent = all.slice(-20), older = all.slice(0, -20);
+    const pick = older.length > 15 ? shuffleArray(older.slice()).slice(0, 15) : older;
+    const lines = recent.concat(pick).map(e => `・${(e.r || e.s).slice(0, 45)}`);
+    return `\n\n【過去に出題した問題（これらと同じ知識・論点・数値設定は問わない。別の知識を問うこと）】\n${lines.join('\n')}`;
+  }
+  window.resetAiHistory = function() {
+    if (!confirm('AIが過去に出した問題の記録（重複を避けるためのもの）を消します。よろしいですか？')) return;
+    aiHist = {}; saveAiHist(); updateAiHistCount(); showToast('記録を消しました');
+  };
+  function updateAiHistCount() {
+    const el = document.getElementById('ai-hist-count');
+    if (el) el.textContent = Object.values(aiHistOf('senmon') ? aiHist : {}).reduce((t, l) => t + l.length, 0);
+  }
+
   // AIの問題が、過去問とほぼ同じ（流用）でないかを確かめる
   const COPY_THRESHOLD = 0.5;
   const pastBigramCache = {};
@@ -3870,6 +3926,7 @@ ${body}`;
       options: options.map(fixMathText),
       answer: idx,
       explanation: fixMathText(String(raw.explanation ?? raw.reason ?? '').trim()) || '（解説なし）',
+      reason: String(raw.reason ?? '').trim().slice(0, 80),
       needExp: !String(raw.explanation ?? '').trim(),   // 詳しい解説は、問題を解いている間に別のAI呼び出しで作る
       theme: String(raw.theme ?? '').trim()
     };
@@ -4010,6 +4067,7 @@ ${body}`;
       const t0 = Date.now();
       const usedThemes = new Set();      // この試験で扱うテーマ。重複させない
       const examBigrams = [];            // 合格した問題の文章（似た問題の検出用）
+      const examReasons = [];            // 合格した問題の「正解の根拠」（同じ知識を問う問題の検出用）
       let prevLines = [];                // 合格した問題の冒頭（AIに重複を避けさせる）
       let lastBusy = null, emptyWaves = 0, stallWaves = 0;
 
@@ -4064,11 +4122,14 @@ ${body}`;
         const cands = tasks.flatMap(t => t.cands.map(q => ({ q, gi: t.gi })));
         if (cands.length === 0) { if (++emptyWaves >= 2) break; continue; }
         emptyWaves = 0;
-        const seenBg = [], uniq = [];
+        const seenBg = [], uniq = [], seenEx = [];
         for (const c of cands) {
           const bg = bigramsOf(c.q.question + (c.q.options || []).join(''));
           if (isSimilarToAny(bg, examBigrams) || isSimilarToAny(bg, seenBg)) continue;
-          seenBg.push(bg); c.bg = bg; uniq.push(c);
+          // 同じ回の中で、正解の根拠（問うている知識）が同じ問題も除く
+          const rb = c.q.reason && c.q.reason.length >= 8 ? bigramsOf(c.q.reason) : null;
+          if (rb && (examReasons.some(o => jaccard(rb, o) >= 0.45) || seenEx.some(o => jaccard(rb, o) >= 0.45))) continue;
+          seenBg.push(bg); c.bg = bg; c.rb = rb; if (rb) seenEx.push(rb); uniq.push(c);
         }
 
         // 4) 品質チェック（別のAI呼び出し）。全部をまとめて確認する
@@ -4080,6 +4141,7 @@ ${body}`;
           if (!okSet.has(c.q) || accepted[c.gi].length >= need[c.gi]) return;
           accepted[c.gi].push(c.q);
           examBigrams.push(c.bg);
+          if (c.rb) examReasons.push(c.rb);
           prevLines.push('・' + c.q.question.replace(/\s+/g, ' ').slice(0, 60));
         });
         setProgress(`${acceptedCount()}問が完成`);
@@ -4095,6 +4157,7 @@ ${body}`;
       setProgress('全問題の準備完了！');
       const result = [];
       accepted.forEach(list => result.push(...shuffleArray(list.slice())));
+      accepted.forEach((list, gi) => recordAiHist(currentSubject, plan[gi].genre, list));   // 次回以降、同じ知識を問わないよう記録する
       const shortage = Math.max(0, totalNeed - acceptedCount());
       // 適性科目は分野ごとの区切りがないので、全体を混ぜる
       return { questions: mockRuleOf(currentSubject).allRequired ? shuffleArray(result) : result, filled: shortage };
@@ -4107,9 +4170,9 @@ ${body}`;
     const modelName = AI_MODEL;
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     
-    let avoidPrompt = "";
+    let avoidPrompt = historyPrompt(currentSubject, genre);
     if (previousQuestionsText) {
-        avoidPrompt = `\n\n【重要：重複の回避】\nすでに以下の問題が作成されています。これらと内容や問うている知識が被らないよう、全く異なるテーマや切り口で作成してください。\n${previousQuestionsText}`;
+        avoidPrompt += `\n\n【重要：重複の回避】\nすでに以下の問題が作成されています。これらと内容や問うている知識が被らないよう、全く異なるテーマや切り口で作成してください。\n${previousQuestionsText}`;
     }
 
     // 過去問のテーマを1問ずつ指定する
@@ -4160,6 +4223,7 @@ ${AI_JSON_FORMAT}
         list.slice(0, count + 2).forEach((raw, rawIdx) => {
           const r = normalizeAiQuestion(raw);
           if (r.ok && isCopyOfPast(r, currentSubject)) console.warn('AIの問題を除外しました（過去問とほぼ同じ）');
+          else if (r.ok && isRepeatOfHistory(r, currentSubject)) console.warn('AIの問題を除外しました（過去に出した問題と同じ知識）');
           else if (r.ok) valid.push({ ...r, rawIdx });
           else console.warn(`AIの問題を除外しました（${r.error}）`);
         });
@@ -4179,6 +4243,7 @@ ${AI_JSON_FORMAT}
           answer: q.answer,
           explanation: `【AI解説】\n${q.explanation}`,
           needExp: q.needExp,
+          reason: q.reason,
           imageUrl: ""
         }));
       } catch (e) {
@@ -4653,7 +4718,8 @@ ${AI_JSON_FORMAT}
     // この特訓で出題済みのAI問題と内容が被らないようにする
     const alreadyAsked = filteredQuestions.filter(q => String(q.id).startsWith('AI-')).slice(-30)
       .map(q => `・${String(q.question).replace(/\s+/g, ' ').slice(0, 60)}`).join('\n');
-    const askedPrompt = alreadyAsked ? `\n\n【すでに出題した問題（これらと内容や問う知識が被らないこと）】\n${alreadyAsked}` : "";
+    const sessionHistBgs = filteredQuestions.filter(q => String(q.id).startsWith('AI-')).map(q => ({ s: bigramsOf(qHistText(q)), r: q.reason && q.reason.length >= 8 ? bigramsOf(q.reason) : null }));
+    const askedPrompt = historyPrompt(currentSubject, genre !== 'all' ? genre : '') + (alreadyAsked ? `\n\n【すでに出題した問題（これらと内容や問う知識が被らないこと）】\n${alreadyAsked}` : "");
 
     const prompt = `あなたは${sj.examName}の試験委員です。
 以下の【過去の出題例】を分析し、難易度、文章の形式、専門用語のレベルを模倣した上で、同じ【五肢択一問題】の新しいオリジナル予想問題を、異なる切り口で「5問」生成してください。
@@ -4708,6 +4774,7 @@ ${AI_JSON_FORMAT}`;
     list.forEach(raw => {
       const r = normalizeAiQuestion(raw);
       if (r.ok && isCopyOfPast(r, currentSubject)) console.warn('AIの問題を除外しました（過去問とほぼ同じ）');
+      else if (r.ok && isRepeatOfHistory(r, currentSubject, sessionHistBgs)) console.warn('AIの問題を除外しました（過去に出した問題と同じ知識）');
       else if (r.ok) valid.push(r);
       else console.warn(`AIの問題を除外しました（${r.error}）`);
     });
@@ -4754,6 +4821,7 @@ ${AI_JSON_FORMAT}`;
       if (!got) got = await requestPracticeAI(useLiteModel, job.controller.signal);
       throwIfCancelled(job);
       const { valid, lite } = got;
+      recordAiHist(currentSubject, genre !== 'all' ? genre : '', valid);
 
       const startIndex = filteredQuestions.length;
       const stamp = Date.now();
@@ -4772,6 +4840,7 @@ ${AI_JSON_FORMAT}`;
             answer: qData.answer,
             explanation: `【AIによる解説】\n${qData.explanation}`,
             needExp: qData.needExp,
+            reason: qData.reason,
             imageUrl: "" 
           });
       });
