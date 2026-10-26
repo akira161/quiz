@@ -432,6 +432,7 @@
     .note-link-btn:hover { background: var(--info-bg); }
     .note-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; display: none; align-items: flex-end; justify-content: center; }
     .note-modal.show { display: flex; }
+    .note-modal.center { align-items: center; z-index: 300; }
     .note-modal-panel { background: var(--card); color: var(--text); width: 100%; max-width: 640px; max-height: 85vh; overflow-y: auto; border-radius: 16px 16px 0 0; padding: 16px 16px 24px; animation: fadeIn 0.2s; }
     .note-modal-head { display: flex; justify-content: space-between; align-items: center; position: sticky; top: -16px; background: var(--card); padding: 4px 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
     .note-modal-head b { color: var(--primary); }
@@ -1033,6 +1034,13 @@
       </div>
     </details>
     <button class="nav-btn secondary" onclick="goToStart()" style="margin-top: 12px;">設定画面に戻る</button>
+  </div>
+
+  <div id="choice-modal" class="note-modal center" role="dialog" aria-modal="true">
+    <div class="note-modal-panel" style="max-width: 520px; border-radius: 16px; margin: 16px;">
+      <div id="choice-msg" style="line-height: 1.75; white-space: pre-line;"></div>
+      <div id="choice-btns" style="display: flex; flex-direction: column; gap: 8px; margin-top: 16px;"></div>
+    </div>
   </div>
 
   <div id="note-modal" class="note-modal" onclick="if(event.target === this) closeNoteModal()">
@@ -3460,12 +3468,33 @@
       }
       endAiJob(job);
       if (job.aborted) return;
-      questions = built.questions;
-      if (built.filled > 0) {
-        // AIが作れなかった問題が残った場合: 過去問では補わず、作れた問題だけで始めるかを確認する
-        if (!confirm(`AIが作れた問題は${built.questions.length}問でした（予定より${built.filled}問少ない）。\n（混雑や、問題の品質チェック・重複チェックを通らなかったためです）\n\nこの問題数で始めますか？\n「キャンセル」を押すと中止します（あとで作り直せます）。`)) { goToStart(); return; }
-        sourceLabel += `（AI問題${built.questions.length}問で実施）`;
+      // AIが作れなかった問題が残った場合: 過去問では補わず、「足りない分を再生成」「この問題数で始める」「中止」から選んでもらう
+      while (built.filled > 0) {
+        const choice = await askChoice(
+          `AIが作れた問題は${built.questions.length}問でした（予定より${built.filled}問少ない）。\n（混雑や、問題の品質チェック・重複チェックを通らなかったためです）`,
+          [
+            { label: `足りない${built.filled}問をAIで再生成する`, value: 'regen' },
+            { label: `この${built.questions.length}問で始める`, value: 'start', secondary: true },
+            { label: '中止する', value: 'cancel', secondary: true }
+          ]);
+        if (choice === 'cancel') { goToStart(); return; }
+        if (choice === 'start') break;
+        const job2 = startAiJob('mock');
+        try {
+          built = await buildAIMockSet(apiKey, aiMockPlan(source), job2, { existing: built.questions });
+        } catch (error) {
+          endAiJob(job2);
+          if (error instanceof AiCancelled || job2.aborted) return;
+          console.error(error);
+          alert("問題生成に失敗しました: " + error.message);
+          goToStart();
+          return;
+        }
+        endAiJob(job2);
+        if (job2.aborted) return;
       }
+      questions = built.questions;
+      if (built.filled > 0) sourceLabel += `（AI問題${built.questions.length}問で実施）`;
     }
 
     if (questions.length === 0) { alert("出題できる問題がありません。"); return; }
@@ -3973,6 +4002,24 @@ ${body}`;
 
   // AI予想問題のセットを作る（分野ごとに4問ずつ生成し、重複を避けるため既出の問題文を渡す）
 
+  // 3択以上のダイアログ（標準のconfirmは2択まで）。選んだボタンの value を返す
+  function askChoice(message, buttons) {
+    return new Promise(resolve => {
+      const modal = document.getElementById('choice-modal');
+      document.getElementById('choice-msg').textContent = message;
+      const box = document.getElementById('choice-btns');
+      box.innerHTML = '';
+      buttons.forEach(b => {
+        const btn = document.createElement('button');
+        btn.className = 'nav-btn' + (b.secondary ? ' secondary' : '');
+        btn.textContent = b.label;
+        btn.onclick = () => { modal.classList.remove('show'); resolve(b.value); };
+        box.appendChild(btn);
+      });
+      modal.classList.add('show');
+    });
+  }
+
   // --- 腕試しのAI問題セットの先行生成（試験を始めるときに待たなくて済むよう、裏で次のセットを作っておく） ---
   const AI_MOCK_CACHE_KEY = 'ai_mock_cache_v4';   // 品質チェック導入前に先行生成した問題は使わない
   const AI_MOCK_CACHE_TTL = 14 * 24 * 3600 * 1000;
@@ -4041,6 +4088,9 @@ ${body}`;
     if (!quiet) showMockBuildUi(totalNeed, 0);
 
     const accepted = plan.map(() => []);                 // 分野ごとの、合格した問題
+    const existing = opts.existing || [];                 // 作り直しのとき、すでに合格している問題（これに足りない分だけを足す）
+    const existingSet = new Set(existing);
+    plan.forEach((pl, gi) => { existing.filter(q => q.genre === pl.genre).slice(0, need[gi]).forEach(q => accepted[gi].push(q)); });
     const acceptedCount = () => accepted.reduce((t, a) => t + a.length, 0);
     const setProgress = (msg) => {
       if (job.aborted) return;
@@ -4069,6 +4119,11 @@ ${body}`;
       const examBigrams = [];            // 合格した問題の文章（似た問題の検出用）
       const examReasons = [];            // 合格した問題の「正解の根拠」（同じ知識を問う問題の検出用）
       let prevLines = [];                // 合格した問題の冒頭（AIに重複を避けさせる）
+      accepted.forEach(list => list.forEach(q => {
+        examBigrams.push(bigramsOf(q.question + (q.options || []).join('')));
+        if (q.reason && q.reason.length >= 8) examReasons.push(bigramsOf(q.reason));
+        prevLines.push('・' + q.question.replace(/\s+/g, ' ').slice(0, 60));
+      }));
       let lastBusy = null, emptyWaves = 0, stallWaves = 0;
 
       // 「多めに作って、合格したものだけを使う」方式。足りない分は、次の回でまとめて並行して作り直す
@@ -4157,7 +4212,7 @@ ${body}`;
       setProgress('全問題の準備完了！');
       const result = [];
       accepted.forEach(list => result.push(...shuffleArray(list.slice())));
-      accepted.forEach((list, gi) => recordAiHist(currentSubject, plan[gi].genre, list));   // 次回以降、同じ知識を問わないよう記録する
+      accepted.forEach((list, gi) => recordAiHist(currentSubject, plan[gi].genre, list.filter(q => !existingSet.has(q))));   // 次回以降、同じ知識を問わないよう記録する
       const shortage = Math.max(0, totalNeed - acceptedCount());
       // 適性科目は分野ごとの区切りがないので、全体を混ぜる
       return { questions: mockRuleOf(currentSubject).allRequired ? shuffleArray(result) : result, filled: shortage };
