@@ -433,6 +433,19 @@
     .note-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; display: none; align-items: flex-end; justify-content: center; }
     .note-modal.show { display: flex; }
     .note-modal.center { align-items: center; z-index: 300; }
+    /* 作問の進み具合（画面下のステータスバー） */
+    .gen-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 250; display: none; background: var(--card); border-top: 1px solid var(--border); box-shadow: 0 -2px 8px rgba(0,0,0,0.08); padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); font-size: 0.8rem; }
+    .gen-bar.show { display: block; }
+    .gen-bar .gb-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; margin-bottom: 5px; max-width: 1100px; margin-left: auto; margin-right: auto; }
+    .gen-bar .gb-label { color: var(--text); line-height: 1.4; }
+    .gen-bar .gb-title { color: var(--text-muted); font-size: 0.72rem; margin-right: 6px; }
+    .gen-bar .gb-count { font-weight: bold; color: #a855f7; white-space: nowrap; }
+    .gen-bar .gb-track { position: relative; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; max-width: 1100px; margin: 0 auto; }
+    .gen-bar .gb-track > div { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; transition: width 0.4s ease; }
+    .gen-bar .gb-cand { background: rgba(168, 85, 247, 0.3); }
+    .gen-bar .gb-ok { background: linear-gradient(135deg, #a855f7, #d946ef); }
+    .gen-bar.busy .gb-count { color: #eab308; }
+    body.has-gen-bar { padding-bottom: 72px; }
     .note-modal-panel { background: var(--card); color: var(--text); width: 100%; max-width: 640px; max-height: 85vh; overflow-y: auto; border-radius: 16px 16px 0 0; padding: 16px 16px 24px; animation: fadeIn 0.2s; }
     .note-modal-head { display: flex; justify-content: space-between; align-items: center; position: sticky; top: -16px; background: var(--card); padding: 4px 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
     .note-modal-head b { color: var(--primary); }
@@ -1035,6 +1048,11 @@
       </div>
     </details>
     <button class="nav-btn secondary" onclick="goToStart()" style="margin-top: 12px;">設定画面に戻る</button>
+  </div>
+
+  <div id="gen-bar" class="gen-bar" role="status" aria-live="polite">
+    <div class="gb-row"><span class="gb-label" id="gb-label"></span><span class="gb-count" id="gb-count"></span></div>
+    <div class="gb-track"><div class="gb-cand" id="gb-cand"></div><div class="gb-ok" id="gb-ok"></div></div>
   </div>
 
   <div id="genlog-modal" class="note-modal center" role="dialog" aria-modal="true">
@@ -4252,6 +4270,61 @@ ${body}`;
     updateMockPrepStatus();
   };
 
+  // --- 作問の進み具合を、画面下のステータスバーに出す（裏で作っている間も、どの画面でも見える） ---
+  let genStatus = null;   // { title, need, ok, wave, tasksDone, tasksTotal, def, phase, t0 }
+  let genBarTimer = null;
+  function renderGenBar() {
+    const bar = document.getElementById('gen-bar');
+    if (!bar) return;
+    const g = genStatus;
+    if (!g) { bar.classList.remove('show'); document.body.classList.remove('has-gen-bar'); return; }
+    const el = Math.floor((Date.now() - g.t0) / 1000);
+    const elapsed = `${Math.floor(el / 60)}:${String(el % 60).padStart(2, '0')}`;
+    const pause = Math.ceil((aiPauseUntil - Date.now()) / 1000);
+    let label;
+    if (g.phase === 'done') label = g.ok >= g.need ? '✅ 完成しました' : `作成を終了（${g.need - g.ok}問不足）`;
+    else if (pause > 0 && g.phase !== 'verify') label = `⏳ APIの利用制限のため待機中… あと${pause}秒`;
+    else if (g.phase === 'verify') label = `🔍 第${g.wave}回 品質チェック中…`;
+    else if (g.phase === 'gen') label = `✍️ 第${g.wave}回 作問中（${g.tasksDone}/${g.tasksTotal}組 完了）`;
+    else label = '準備中…';
+    bar.classList.toggle('busy', pause > 0 && g.phase !== 'done');
+    document.getElementById('gb-label').innerHTML = `<span class="gb-title">${g.title}</span>${escapeHtml(label)}`;
+    document.getElementById('gb-count').textContent = `${Math.min(g.ok, g.need)}/${g.need}問・${elapsed}`;
+    // 濃い部分: 合格した問題。薄い部分: 今回作っている分の進み具合（品質チェック前）
+    const okW = Math.min(100, g.ok / Math.max(1, g.need) * 100);
+    const inWave = g.phase === 'gen' && g.tasksTotal ? g.def * g.tasksDone / g.tasksTotal : (g.phase === 'verify' ? g.def : 0);
+    document.getElementById('gb-ok').style.width = okW + '%';
+    document.getElementById('gb-cand').style.width = Math.min(100, (g.ok + inWave) / Math.max(1, g.need) * 100) + '%';
+    bar.classList.add('show');
+    document.body.classList.add('has-gen-bar');
+    // 画面中央の進み具合（前面で作っているとき）にも同じ内容を出す
+    const pt = document.getElementById('ai-progress-text');
+    if (pt && !g.quiet && g.phase !== 'done') {
+      pt.textContent = label;
+      document.getElementById('ai-progress-bar').style.width = Math.min(100, (g.ok + inWave) / Math.max(1, g.need) * 100) + '%';
+    }
+  }
+  function setGenStatus(patch) {
+    if (!genStatus) return;
+    Object.assign(genStatus, patch);
+    renderGenBar();
+  }
+  function startGenStatus(title, need, ok, quiet) {
+    genStatus = { title, need, ok, wave: 1, tasksDone: 0, tasksTotal: 0, def: 0, phase: 'prep', t0: Date.now(), quiet };
+    clearInterval(genBarTimer);
+    genBarTimer = setInterval(renderGenBar, 1000);   // 経過時間・待ち時間の表示を進める
+    renderGenBar();
+    return genStatus;
+  }
+  function endGenStatus(st, finished) {
+    if (genStatus !== st) return;
+    clearInterval(genBarTimer);
+    if (!finished) { genStatus = null; renderGenBar(); return; }
+    st.phase = 'done';
+    renderGenBar();
+    setTimeout(() => { if (genStatus === st) { genStatus = null; renderGenBar(); } }, 4000);
+  }
+
   // opts.quiet=true: 画面を切り替えず、裏で作る（先行生成用）。進み具合は opts.onProgress(done, total, msg) に知らせる
   async function buildAIMockSet(apiKey, plan, job, opts = {}) {
     const quiet = !!opts.quiet;
@@ -4266,6 +4339,8 @@ ${body}`;
     const existingSet = new Set(existing);
     plan.forEach((pl, gi) => { existing.filter(q => q.genre === pl.genre).slice(0, need[gi]).forEach(q => accepted[gi].push(q)); });
     const acceptedCount = () => accepted.reduce((t, a) => t + a.length, 0);
+    const gst = startGenStatus(quiet ? 'AI腕試し（裏で作成）' : opts.existing ? '足りない分の再生成' : 'AI腕試しの作成', totalNeed, acceptedCount(), quiet);
+    let finishedOk = false;
     const setProgress = (msg) => {
       if (job.aborted) return;
       const done = Math.min(acceptedCount(), totalNeed);
@@ -4326,6 +4401,7 @@ ${body}`;
           }
         });
         setProgress(wave === 0 ? 'AIが問題を作成中...' : `足りない${totalDef}問をAIが作り直し中...（${wave}回目）`);
+        setGenStatus({ phase: 'gen', wave: wave + 1, tasksDone: 0, tasksTotal: tasks.length, def: totalDef, ok: acceptedCount() });
 
         // 2) 同時に最大 MOCK_CONCURRENCY 件ずつ、並行して作らせる
         let nextTask = 0, active = 0, failed = false, doneTasks = 0;
@@ -4339,7 +4415,7 @@ ${body}`;
             console.warn('この組は作れませんでした:', e.message);
           }
           doneTasks++;
-          if (!failed) setProgress(`AIが問題を作成中 (${doneTasks}/${tasks.length}組 完了)...`);
+          if (!failed) { setProgress(`AIが問題を作成中 (${doneTasks}/${tasks.length}組 完了)...`); setGenStatus({ tasksDone: doneTasks }); }
         };
         const worker = async () => {
           while (!failed && nextTask < tasks.length) {
@@ -4369,7 +4445,7 @@ ${body}`;
         }
 
         // 4) 品質チェック（別のAI呼び出し）。全部をまとめて確認する
-        if (isStrictAi()) setProgress('問題の品質をAIが確認中...');
+        if (isStrictAi()) { setProgress('問題の品質をAIが確認中...'); setGenStatus({ phase: 'verify' }); }
         const okSet = new Set(await filterVerified(uniq.map(c => c.q), job));
 
         // 5) 合格したものを、分野ごとに必要な数だけ採用する
@@ -4381,6 +4457,7 @@ ${body}`;
           prevLines.push('・' + c.q.question.replace(/\s+/g, ' ').slice(0, 60));
         });
         setProgress(`${acceptedCount()}問が完成`);
+        setGenStatus({ ok: acceptedCount(), phase: 'gen', tasksDone: 0, tasksTotal: 0, def: 0 });
         logGen('wave', { no: wave + 1, def: totalDef, tasks: tasks.length, cands: cands.length, dup: cands.length - uniq.length, bad: uniq.length - okSet.size, added: acceptedCount() - before, ms: Date.now() - waveT0 });
         // 1回分作り直しても1問も増えない状態が続くなら、AIを叩き続けずに打ち切る
         if (acceptedCount() === before) { if (++stallWaves >= 2) break; } else stallWaves = 0;
@@ -4397,12 +4474,15 @@ ${body}`;
       accepted.forEach((list, gi) => recordAiHist(currentSubject, plan[gi].genre, list.filter(q => !existingSet.has(q))));   // 次回以降、同じ知識を問わないよう記録する
       const shortage = Math.max(0, totalNeed - acceptedCount());
       endGenLog(glog, { made: acceptedCount(), need: totalNeed });
+      setGenStatus({ ok: acceptedCount() });
+      finishedOk = true;
       // 適性科目は分野ごとの区切りがないので、全体を混ぜる
       return { questions: mockRuleOf(currentSubject).allRequired ? shuffleArray(result) : result, filled: shortage };
     } catch (e) {
       endGenLog(glog, { made: acceptedCount(), need: totalNeed, error: e instanceof AiCancelled || job.aborted ? '中止' : String(e.message || e).slice(0, 80) });
       throw e;
     } finally {
+      endGenStatus(gst, finishedOk);
       if (!quiet) hideAiLoading();
     }
   }
