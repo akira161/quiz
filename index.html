@@ -816,6 +816,7 @@
           <button class="nav-btn secondary" onclick="clearSavedExplanations()" style="margin-bottom: 12px;">保存したAI解説を削除する</button>
           <div class="ai-only" style="font-size: 0.9rem; margin-bottom: 8px;">AIが過去に出した問題の記録（重複を避けるため）: <b id="ai-hist-count">0</b> 件</div>
           <button class="nav-btn secondary ai-only" onclick="resetAiHistory()" style="margin-bottom: 12px;">AIの出題記録をリセットする</button>
+          <button class="nav-btn secondary ai-only" onclick="showGenLogs()" style="margin-bottom: 12px;">AI生成ログを見る（遅いときの原因調査）</button>
           <button class="nav-btn danger" onclick="resetHistory()">学習記録をリセットする</button>
           <div style="font-size: 0.8rem; margin-top: 8px; color: var(--text-muted); line-height: 1.5;">
             ※総解答数、正解数、各問題の正誤履歴がすべて消去されます。<br>
@@ -1034,6 +1035,19 @@
       </div>
     </details>
     <button class="nav-btn secondary" onclick="goToStart()" style="margin-top: 12px;">設定画面に戻る</button>
+  </div>
+
+  <div id="genlog-modal" class="note-modal center" role="dialog" aria-modal="true">
+    <div class="note-modal-panel" style="max-width: 760px; width: calc(100% - 32px); border-radius: 16px; margin: 16px; display: flex; flex-direction: column; max-height: 85vh;">
+      <div style="font-weight: bold; margin-bottom: 8px;">AI生成ログ（新しい順・直近10回）</div>
+      <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px;">遅かったときは「コピー」して貼り付けて送ってください。APIキーや問題文は含みません。</div>
+      <pre id="genlog-text" style="flex: 1; overflow: auto; white-space: pre-wrap; font-size: 0.75rem; line-height: 1.5; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 0;"></pre>
+      <div style="display: flex; gap: 8px; margin-top: 12px;">
+        <button class="nav-btn" onclick="copyGenLogs()" style="flex: 1;">コピー</button>
+        <button class="nav-btn secondary" onclick="clearGenLogs()" style="flex: 1;">消去</button>
+        <button class="nav-btn secondary" onclick="document.getElementById('genlog-modal').classList.remove('show')" style="flex: 1;">閉じる</button>
+      </div>
+    </div>
   </div>
 
   <div id="choice-modal" class="note-modal center" role="dialog" aria-modal="true">
@@ -3447,7 +3461,9 @@
           document.getElementById('ai-progress-count').textContent = `${prep.done} / ${total} 問`;
           document.getElementById('ai-progress-bar').style.width = `${Math.min(100, Math.round(prep.done / total * 100))}%`;
         }, 300);
+        const waitT0 = Date.now();
         await Promise.race([prep.promise, new Promise(res => uiJob.controller.signal.addEventListener('abort', res, { once: true }))]);
+        if (!uiJob.aborted) noteLastGenLog(`開始ボタンを押してから、裏の作成が終わるまで ${fmtSec(Date.now() - waitT0)} 待った`);
         clearInterval(tick);
         hideAiLoading();
         endAiJob(uiJob);
@@ -3599,6 +3615,117 @@
   const AI_MODEL = 'gemini-3.5-flash-lite';
   const AI_ALWAYS_LITE = AI_MODEL.endsWith('-lite');   // すでに軽量なので、混雑時に軽量モデルへ切り替える処理は不要
   const GEMINI_TIMEOUT_MS = 75000;   // 1回の応答がこれより長くかかったら、待ち続けずにやり直す
+  // --- AI生成ログ: 遅いときに原因を調べられるよう、呼び出しごとの時間・文字数・混雑待ち・作り直しの回数を記録する ---
+  const GEN_LOG_KEY = 'ai_gen_logs', GEN_LOG_MAX = 10;
+  let genLog = null;   // 記録中のログ（腕試しの問題セットを作っている間だけ）
+  function startGenLog(title) {
+    genLog = { title, at: Date.now(), subject: currentSubject, model: AI_MODEL, conc: MOCK_CONCURRENCY, strict: isStrictAi(), ev: [] };
+    return genLog;
+  }
+  function logGen(type, info) {
+    if (genLog) genLog.ev.push(Object.assign({ t: Date.now() - genLog.at, type }, info));
+  }
+  function loadGenLogs() { try { return JSON.parse(localStorage.getItem(GEN_LOG_KEY) || '[]'); } catch (e) { return []; } }
+  function saveGenLogs(all) { try { localStorage.setItem(GEN_LOG_KEY, JSON.stringify(all.slice(-GEN_LOG_MAX))); } catch (e) {} }
+  function endGenLog(log, result) {
+    if (!log) return;
+    if (genLog === log) genLog = null;
+    log.ms = Date.now() - log.at;
+    log.result = result;
+    const all = loadGenLogs(); all.push(log); saveGenLogs(all);
+    console.log(formatGenLog(log));
+  }
+  // 直前に保存したログに、あとから分かったこと（画面で待った時間など）を書き足す
+  function noteLastGenLog(text) {
+    const all = loadGenLogs();
+    if (!all.length) return;
+    (all[all.length - 1].notes = all[all.length - 1].notes || []).push(text);
+    saveGenLogs(all);
+  }
+  const fmtSec = ms => (ms / 1000).toFixed(1) + '秒';
+  function formatGenLog(log) {
+    const L = [];
+    const sub = (SUBJECTS[log.subject] || {}).short || log.subject;
+    const r = log.result || {};
+    L.push(`■ ${log.title}（${sub}） ${new Date(log.at).toLocaleString('ja-JP')}`);
+    L.push(`結果: ${r.error ? 'エラー（' + r.error + '）' : `${r.made}/${r.need}問`}　合計 ${fmtSec(log.ms || 0)}`);
+    L.push(`設定: モデル ${log.model} / 同時数 ${log.conc} / 品質チェック ${log.strict ? 'オン' : 'オフ'}`);
+    (log.notes || []).forEach(n => L.push('メモ: ' + n));
+    const calls = log.ev.filter(e => e.type === 'call');
+    const kinds = {};
+    calls.forEach(c => { (kinds[c.kind] = kinds[c.kind] || []).push(c); });
+    L.push('');
+    L.push('【呼び出しの集計】');
+    Object.entries(kinds).forEach(([k, list]) => {
+      const ms = list.map(c => c.ms), avg = ms.reduce((a, b) => a + b, 0) / ms.length;
+      const inAvg = Math.round(list.reduce((a, c) => a + (c.chars || 0), 0) / list.length);
+      const outs = list.filter(c => c.out != null), outAvg = outs.length ? Math.round(outs.reduce((a, c) => a + c.out, 0) / outs.length) : '-';
+      const ths = list.filter(c => c.think != null), thAvg = ths.length ? Math.round(ths.reduce((a, c) => a + c.think, 0) / ths.length) : '-';
+      const errs = list.filter(c => c.status !== 200).length;
+      L.push(`${k}: ${list.length}回 / 応答 平均${fmtSec(avg)}・最長${fmtSec(Math.max(...ms))} / 入力 平均${inAvg}字${outs.length ? ` / 出力 平均${outAvg}tok（思考${thAvg}tok）` : ''}${errs ? ` / 失敗${errs}回` : ''}`);
+    });
+    const busy = log.ev.filter(e => e.type === 'busy');
+    if (busy.length) L.push(`混雑（429/503）: ${busy.length}回、待ち指定 合計${fmtSec(busy.reduce((a, b) => a + b.wait, 0))}`);
+    const waves = log.ev.filter(e => e.type === 'wave');
+    if (waves.length) L.push(`作成の回数: ${waves.length}回（2回目以降は不合格・重複の作り直し）`);
+
+    // 原因の目安
+    const hints = [];
+    const genCalls = kinds['作問'] || [];
+    const genAvg = genCalls.length ? genCalls.reduce((a, c) => a + c.ms, 0) / genCalls.length : 0;
+    if (busy.length && busy.reduce((a, b) => a + b.wait, 0) > (log.ms || 1) * 0.25) hints.push('混雑（利用制限）による待ちが長い → 時間をおく・同時数を減らす');
+    if (genAvg > 20000) hints.push(`作問1回の応答が遅い（平均${fmtSec(genAvg)}）→ Gemini側が遅い／入力が長い`);
+    const ver = kinds['品質チェック'] || [];
+    if (ver.length && ver.reduce((a, c) => a + c.ms, 0) / ver.length > 15000) hints.push('品質チェックの応答が遅い → 設定で品質チェックをオフにすると速くなる（質は下がる）');
+    if (waves.length >= 3) hints.push('不合格・重複が多く、作り直しが何度も発生している');
+    if (calls.some(c => c.err && /時間がかかりすぎ/.test(c.err))) hints.push('応答の時間切れ（75秒）が発生している');
+    if (hints.length) { L.push(''); L.push('【原因の目安】'); hints.forEach(h => L.push('・' + h)); }
+
+    L.push('');
+    L.push('【経過】');
+    log.ev.forEach(e => {
+      const at = '+' + fmtSec(e.t).padStart(6);
+      if (e.type === 'call') {
+        const what = e.kind + (e.genre ? `「${e.genre.slice(0, 8)}」` : '') + (e.count ? ` ${e.count}問` : '');
+        const tok = e.out != null ? ` 出力${e.out}tok${e.think ? `（思考${e.think}）` : ''}` : '';
+        L.push(`${at} ${what} 入力${e.chars}字 → ${fmtSec(e.ms)}${tok} [${e.status}]${e.err ? ' ' + e.err : ''}`);
+      } else if (e.type === 'busy') {
+        L.push(`${at} 混雑 [${e.status}] ${fmtSec(e.wait)}待ち`);
+      } else if (e.type === 'wave') {
+        L.push(`${at} ── 第${e.no}回: 不足${e.def}問 → ${e.tasks}組に分けて作成、候補${e.cands} → 重複除外${e.dup} → 品質除外${e.bad} → 採用${e.added}（この回 ${fmtSec(e.ms)}）`);
+      } else if (e.type === 'note') {
+        L.push(`${at} ${e.text}`);
+      }
+    });
+    return L.join('\n');
+  }
+  window.showGenLogs = function() {
+    const all = loadGenLogs().reverse();
+    document.getElementById('genlog-text').textContent = all.length
+      ? all.map(formatGenLog).join('\n\n' + '─'.repeat(20) + '\n\n')
+      : 'まだログがありません。AIで腕試しの問題を作ると、ここに記録されます。';
+    document.getElementById('genlog-modal').classList.add('show');
+  };
+  window.copyGenLogs = function() {
+    const text = document.getElementById('genlog-text').textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
+      .then(() => showToast('ログをコピーしました'))
+      .catch(() => { const r = document.createRange(); r.selectNodeContents(document.getElementById('genlog-text')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); showToast('選択した文字をコピーしてください'); });
+  };
+  window.clearGenLogs = function() {
+    if (!confirm('AI生成ログを消します。よろしいですか？')) return;
+    saveGenLogs([]); localStorage.removeItem(GEN_LOG_KEY); showGenLogs();
+  };
+
+  // ログ用に、呼び出しの種類（作問・品質チェックなど）と入力の長さを調べる
+  function genLogInfo(payload) {
+    const text = (((payload.contents || [])[0] || {}).parts || []).map(p => p.text || '').join('');
+    const kind = /厳格な校閲者/.test(text) ? '品質チェック' : /試験委員/.test(text) ? '作問' : /解説/.test(text) ? '解説' : 'その他';
+    const genre = (text.match(/「([^」]+)」分野/) || [])[1];
+    const count = +((text.match(/【(\d+)問】/) || [])[1] || 0);
+    return { kind, genre, count: kind === '作問' ? count : 0, chars: text.length };
+  }
+
   async function geminiPost(modelName, apiKey, payload, signal) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     const send = async (think) => {
@@ -3610,10 +3737,15 @@
       if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
       let timedOut = false;
       const tm = setTimeout(() => { timedOut = true; ctl.abort(); }, GEMINI_TIMEOUT_MS);
+      const t0 = Date.now(), at = genLog ? t0 - genLog.at : 0, info = genLogInfo(payload);
       try {
         const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal });
-        return { res, data: await res.json() };
+        const data = await res.json();
+        const u = (data && data.usageMetadata) || {};
+        if (genLog) genLog.ev.push(Object.assign(info, { t: at, type: 'call', ms: Date.now() - t0, status: res.status, out: u.candidatesTokenCount, think: u.thoughtsTokenCount }));
+        return { res, data };
       } catch (e) {
+        if (genLog && !(signal && signal.aborted)) genLog.ev.push(Object.assign(info, { t: at, type: 'call', ms: Date.now() - t0, status: 'ERR', err: timedOut ? '時間切れ' : String(e.message || e).slice(0, 60) }));
         if (timedOut && !(signal && signal.aborted)) throw new Error('AIの応答に時間がかかりすぎたため、やり直します');
         throw e;
       } finally {
@@ -3714,6 +3846,7 @@ ${body}`;
       if (res.status === 429 || res.status === 503) {
         const wait = retryDelayMs(res, data);
         aiPauseUntil = Math.max(aiPauseUntil, Date.now() + wait);
+        logGen('busy', { status: res.status, wait });
         continue;
       }
       if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
@@ -4082,6 +4215,7 @@ ${body}`;
   // opts.quiet=true: 画面を切り替えず、裏で作る（先行生成用）。進み具合は opts.onProgress(done, total, msg) に知らせる
   async function buildAIMockSet(apiKey, plan, job, opts = {}) {
     const quiet = !!opts.quiet;
+    const glog = startGenLog(quiet ? '腕試しの先行生成（裏で作成）' : opts.existing ? '腕試し（足りない分の再生成）' : '腕試しの問題作成');
     // 過去問では補わない: 計画の「過去問」分も含めて、すべてAIのオリジナル問題で構成する
     const need = plan.map(pl => pl.ai + pl.past);
     const totalNeed = need.reduce((a, b) => a + b, 0);
@@ -4134,7 +4268,7 @@ ${body}`;
         if (totalDef === 0) break;
         if (wave > 0 && Date.now() - t0 > 150000 && totalDef <= 3) break;   // 時間がかかりすぎたら、わずかな不足は諦める
 
-        const before = acceptedCount();
+        const before = acceptedCount(), waveT0 = Date.now();
         // 1) 作る単位（分野ごとに最大3問ずつ。小分けにして並行で作るほど速い）を決める。不合格になる分を見込んで、多めに作らせる
         const tasks = [];
         deficits.forEach((d, gi) => {
@@ -4175,7 +4309,7 @@ ${body}`;
 
         // 3) 似た問題（すでに合格した問題・同じ回の別の問題と、文面が近いもの）を除く
         const cands = tasks.flatMap(t => t.cands.map(q => ({ q, gi: t.gi })));
-        if (cands.length === 0) { if (++emptyWaves >= 2) break; continue; }
+        if (cands.length === 0) { logGen('wave', { no: wave + 1, def: totalDef, tasks: tasks.length, cands: 0, dup: 0, bad: 0, added: 0, ms: Date.now() - waveT0 }); if (++emptyWaves >= 2) break; continue; }
         emptyWaves = 0;
         const seenBg = [], uniq = [], seenEx = [];
         for (const c of cands) {
@@ -4200,6 +4334,7 @@ ${body}`;
           prevLines.push('・' + c.q.question.replace(/\s+/g, ' ').slice(0, 60));
         });
         setProgress(`${acceptedCount()}問が完成`);
+        logGen('wave', { no: wave + 1, def: totalDef, tasks: tasks.length, cands: cands.length, dup: cands.length - uniq.length, bad: uniq.length - okSet.size, added: acceptedCount() - before, ms: Date.now() - waveT0 });
         // 1回分作り直しても1問も増えない状態が続くなら、AIを叩き続けずに打ち切る
         if (acceptedCount() === before) { if (++stallWaves >= 2) break; } else stallWaves = 0;
       }
@@ -4214,8 +4349,12 @@ ${body}`;
       accepted.forEach(list => result.push(...shuffleArray(list.slice())));
       accepted.forEach((list, gi) => recordAiHist(currentSubject, plan[gi].genre, list.filter(q => !existingSet.has(q))));   // 次回以降、同じ知識を問わないよう記録する
       const shortage = Math.max(0, totalNeed - acceptedCount());
+      endGenLog(glog, { made: acceptedCount(), need: totalNeed });
       // 適性科目は分野ごとの区切りがないので、全体を混ぜる
       return { questions: mockRuleOf(currentSubject).allRequired ? shuffleArray(result) : result, filled: shortage };
+    } catch (e) {
+      endGenLog(glog, { made: acceptedCount(), need: totalNeed, error: e instanceof AiCancelled || job.aborted ? '中止' : String(e.message || e).slice(0, 80) });
+      throw e;
     } finally {
       if (!quiet) hideAiLoading();
     }
@@ -4267,6 +4406,7 @@ ${AI_JSON_FORMAT}
                }
                const wait = retryDelayMs(res, data);
                aiPauseUntil = Math.max(aiPauseUntil, Date.now() + wait);
+               logGen('busy', { status: res.status, wait });
                throw new AiBusy(`APIが混雑しています（${res.status}）`, wait);
            }
            throw new Error(data.error?.message || "Unknown API Error");
@@ -4817,6 +4957,7 @@ ${AI_JSON_FORMAT}`;
         // 利用制限・混雑: APIが指定した時間だけ待ってから、もう一度
         const wait = retryDelayMs(response, result);
         aiPauseUntil = Math.max(aiPauseUntil, Date.now() + wait);
+        logGen('busy', { status: response.status, wait });
         await new Promise(resolve => { const tm = setTimeout(resolve, wait); if (signal) signal.addEventListener('abort', () => { clearTimeout(tm); resolve(); }, { once: true }); });
         if (signal && signal.aborted) throw new AiCancelled();
         return requestPracticeAI(useLiteModel, signal, attempt + 1);
