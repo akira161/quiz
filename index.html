@@ -3188,15 +3188,16 @@
   function aiHistBgs(sub) {
     const list = aiHistOf(sub), c = aiHistBgCache[sub];
     if (c && c.n === list.length) return c.v;
-    const v = list.map(e => ({ s: bigramsOf(e.s), r: e.r && e.r.length >= 8 ? bigramsOf(e.r) : null }));
+    const v = list.map(e => ({ g: e.g, s: bigramsOf(e.s), r: e.r && e.r.length >= 8 ? bigramsOf(e.r) : null }));
     aiHistBgCache[sub] = { n: list.length, v };
     return v;
   }
   // 過去に出した問題と、問題文が似ている、または、正解の根拠（問うている知識）が似ている問題か
+  // 「正解の根拠」は短く言い回しが似やすい（「〜法では…と定められている」など）ので、かなり近いときだけ同じ知識とみなす
   function isRepeatOfHistory(q, sub, extra) {
     const bs = bigramsOf(qHistText(q));
     const br = q.reason && String(q.reason).length >= 8 ? bigramsOf(String(q.reason)) : null;
-    const hit = h => jaccard(bs, h.s) >= 0.4 || (br && h.r && jaccard(br, h.r) >= 0.45);
+    const hit = h => jaccard(bs, h.s) >= 0.4 || (br && h.r && jaccard(br, h.r) >= 0.6);
     return aiHistBgs(sub).some(hit) || (extra || []).some(hit);
   }
   // プロンプトに添える「すでに出した問題（同じ知識を問わない）」の一覧。直近のものと、ランダムな過去のもの
@@ -3607,7 +3608,7 @@
     ]
   };
   const AI_BATCH_SIZE = 4;       // 1回に作らせる問題数（呼び出し回数が少ないほど、利用制限に当たりにくい）
-  const MOCK_CONCURRENCY = 6;    // 同時に作らせる数（利用制限を受けたら自動で減らす）
+  const MOCK_CONCURRENCY = 5;    // 同時に作らせる数（利用制限を受けたら自動で減らす）
 
   // Geminiの呼び出し。思考を浅くして速くする（対応していないモデルなら自動で外して再送する）
   let geminiThinkingOk = true;
@@ -3664,6 +3665,10 @@
       const errs = list.filter(c => c.status !== 200).length;
       L.push(`${k}: ${list.length}回 / 応答 平均${fmtSec(avg)}・最長${fmtSec(Math.max(...ms))} / 入力 平均${inAvg}字${outs.length ? ` / 出力 平均${outAvg}tok（思考${thAvg}tok）` : ''}${errs ? ` / 失敗${errs}回` : ''}`);
     });
+    const fl = log.ev.filter(e => e.type === 'filter');
+    const sum = k => fl.reduce((a, e) => a + (e[k] || 0), 0);
+    const gen = sum('ok') + sum('copy') + sum('hist') + sum('bad');
+    if (fl.length) L.push(`作られた問題: ${gen}問 → 使える${sum('ok')} / 過去の出題記録と重複${sum('hist')} / 過去問とほぼ同じ${sum('copy')} / 形式の不備${sum('bad')}`);
     const busy = log.ev.filter(e => e.type === 'busy');
     if (busy.length) L.push(`混雑（429/503）: ${busy.length}回、待ち指定 合計${fmtSec(busy.reduce((a, b) => a + b.wait, 0))}`);
     const waves = log.ev.filter(e => e.type === 'wave');
@@ -3677,6 +3682,8 @@
     if (genAvg > 20000) hints.push(`作問1回の応答が遅い（平均${fmtSec(genAvg)}）→ Gemini側が遅い／入力が長い`);
     const ver = kinds['品質チェック'] || [];
     if (ver.length && ver.reduce((a, c) => a + c.ms, 0) / ver.length > 15000) hints.push('品質チェックの応答が遅い → 設定で品質チェックをオフにすると速くなる（質は下がる）');
+    if (gen && sum('hist') > gen * 0.3) hints.push('過去の出題記録との重複判定で多く除外されている → 設定の「AIの出題記録をリセットする」で改善');
+    if (gen && sum('copy') > gen * 0.3) hints.push('過去問とほぼ同じ問題として多く除外されている');
     if (waves.length >= 3) hints.push('不合格・重複が多く、作り直しが何度も発生している');
     if (calls.some(c => c.err && /時間がかかりすぎ/.test(c.err))) hints.push('応答の時間切れ（75秒）が発生している');
     if (hints.length) { L.push(''); L.push('【原因の目安】'); hints.forEach(h => L.push('・' + h)); }
@@ -3693,6 +3700,8 @@
         L.push(`${at} 混雑 [${e.status}] ${fmtSec(e.wait)}待ち`);
       } else if (e.type === 'wave') {
         L.push(`${at} ── 第${e.no}回: 不足${e.def}問 → ${e.tasks}組に分けて作成、候補${e.cands} → 重複除外${e.dup} → 品質除外${e.bad} → 採用${e.added}（この回 ${fmtSec(e.ms)}）`);
+      } else if (e.type === 'filter') {
+        L.push(`         └ ${e.ok + e.copy + e.hist + e.bad}問中 使える${e.ok}${e.hist ? ` / 記録と重複${e.hist}` : ''}${e.copy ? ` / 過去問と同じ${e.copy}` : ''}${e.bad ? ` / 不備${e.bad}` : ''}`);
       } else if (e.type === 'note') {
         L.push(`${at} ${e.text}`);
       }
@@ -4237,7 +4246,7 @@ ${body}`;
     };
 
     let limit = MOCK_CONCURRENCY;   // 同時に作る数（利用制限を受けたら減らす）
-    let lastThrottle = 0;
+    let lastThrottle = 0, lastRaise = 0;
     const retryCallback = (retriesLeft, isLite) => {
       // 利用制限を受けたら、同時に作る数を半分に減らす（20秒に1回まで）
       if (Date.now() - lastThrottle > 20000) { lastThrottle = Date.now(); limit = Math.max(1, Math.ceil(limit / 2)); }
@@ -4269,12 +4278,17 @@ ${body}`;
         if (wave > 0 && Date.now() - t0 > 150000 && totalDef <= 3) break;   // 時間がかかりすぎたら、わずかな不足は諦める
 
         const before = acceptedCount(), waveT0 = Date.now();
-        // 1) 作る単位（分野ごとに最大3問ずつ。小分けにして並行で作るほど速い）を決める。不合格になる分を見込んで、多めに作らせる
+        // 3回目以降も足りなければ、過去の出題記録との重複判定を外して作り切る（指示文の「過去に出題した問題」は残す）
+        if (wave >= 2 && !job.histLoose && job.rej && job.rej.hist > 0) {
+          job.histLoose = true;
+          logGen('note', { text: `作り直しが続いたため、過去の出題記録との重複判定を外して作成（これまで${job.rej.hist}問を除外）` });
+        }
+        // 1) 作る単位（分野ごとに最大5問ずつ。1分あたりの呼び出し回数に上限があるため、回数を抑える）を決める。不合格になる分を見込んで、多めに作らせる
         const tasks = [];
         deficits.forEach((d, gi) => {
           if (d <= 0) return;
           const ask = Math.max(d + 1, Math.ceil(d * (wave === 0 ? 1.25 : 1.6)));
-          const nb = Math.ceil(ask / 3), base = Math.floor(ask / nb), extra = ask % nb;
+          const nb = Math.ceil(ask / 5), base = Math.floor(ask / nb), extra = ask % nb;
           for (let k = 0; k < nb; k++) {
             const count = base + (k < extra ? 1 : 0);
             tasks.push({ gi, genre: plan[gi].genre, count, seeds: pickThemeSeeds(plan[gi].genre, count, usedThemes), cands: [] });
@@ -4289,7 +4303,7 @@ ${body}`;
           try {
             t.cands = await fetchMockAIBatch(t.genre, t.count, apiKey, false, prevText, retryCallback, t.seeds, job);
           } catch (e) {
-            if (e instanceof AiBusy) { lastBusy = e; limit = 1; job.maxBusy = 1; }
+            if (e instanceof AiBusy) { lastBusy = e; limit = Math.max(1, Math.ceil(limit / 2)); lastThrottle = Date.now(); }
             else if (!(e instanceof AiNoUsable)) throw e;     // 通信・認証などのエラーは、そのまま失敗として扱う
             console.warn('この組は作れませんでした:', e.message);
           }
@@ -4298,6 +4312,8 @@ ${body}`;
         };
         const worker = async () => {
           while (!failed && nextTask < tasks.length) {
+            // 混雑して絞った同時数は、30秒間混雑しなければ1つずつ戻す
+            if (limit < MOCK_CONCURRENCY && Date.now() - lastThrottle > 30000 && Date.now() - lastRaise > 30000) { limit++; lastRaise = Date.now(); }
             if (active >= limit) { await aiSleep(job, 400); throwIfCancelled(job); continue; }   // 混雑したら同時数を絞る
             const t = tasks[nextTask++];
             active++;
@@ -4415,13 +4431,25 @@ ${AI_JSON_FORMAT}
         const list = extractAiQuestionList(data.candidates?.[0]?.content?.parts?.[0]?.text);
         // 形式が不正な問題（選択肢の数・正答が特定できない等）は除く
         const valid = [];
+        const st = { ok: 0, copy: 0, hist: 0, bad: 0 };
         list.slice(0, count + 2).forEach((raw, rawIdx) => {
           const r = normalizeAiQuestion(raw);
-          if (r.ok && isCopyOfPast(r, currentSubject)) console.warn('AIの問題を除外しました（過去問とほぼ同じ）');
-          else if (r.ok && isRepeatOfHistory(r, currentSubject)) console.warn('AIの問題を除外しました（過去に出した問題と同じ知識）');
-          else if (r.ok) valid.push({ ...r, rawIdx });
-          else console.warn(`AIの問題を除外しました（${r.error}）`);
+          if (r.ok) r.genre = genre;
+          if (r.ok && isCopyOfPast(r, currentSubject)) { st.copy++; console.warn('AIの問題を除外しました（過去問とほぼ同じ）'); }
+          else if (r.ok && !(job && job.histLoose) && isRepeatOfHistory(r, currentSubject)) { st.hist++; console.warn('AIの問題を除外しました（過去に出した問題と同じ知識）'); }
+          else if (r.ok) { st.ok++; valid.push({ ...r, rawIdx }); }
+          else { st.bad++; console.warn(`AIの問題を除外しました（${r.error}）`); }
         });
+        logGen('filter', Object.assign({ genre }, st));
+        if (job) {
+          job.rej = job.rej || { ok: 0, copy: 0, hist: 0, bad: 0 };
+          Object.keys(st).forEach(k => job.rej[k] += st[k]);
+          // 履歴との重複判定でほとんど落ちる場合は、判定を外して作り切る（指示文の「過去に出題した問題」は残す）
+          if (!job.histLoose && job.rej.hist >= 10 && job.rej.hist > job.rej.ok * 2) {
+            job.histLoose = true;
+            logGen('note', { text: `過去の出題記録との重複で${job.rej.hist}問が除外されたため、以降はこの判定を外して作成` });
+          }
+        }
         if (valid.length === 0) throw new AiNoUsable("AIの応答に使える問題がありませんでした");
 
         return valid.slice(0, count).map((q, idx) => ({
