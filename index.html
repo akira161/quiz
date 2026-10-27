@@ -3679,6 +3679,10 @@
     const genCalls = kinds['作問'] || [];
     const genAvg = genCalls.length ? genCalls.reduce((a, c) => a + c.ms, 0) / genCalls.length : 0;
     if (busy.length && busy.reduce((a, b) => a + b.wait, 0) > (log.ms || 1) * 0.25) hints.push('混雑（利用制限）による待ちが長い → 時間をおく・同時数を減らす');
+    const qerr = calls.map(c => c.err || '').join(' ');
+    if (/PerDay/i.test(qerr)) hints.push('1日あたりの利用上限に達している → 翌日まで待つ（Googleの上限は日本時間の16〜17時ごろにリセット）');
+    else if (/Token/i.test(qerr)) hints.push('1分あたりの入力・出力の量（トークン）の上限に当たっている');
+    else if (/PerMinute/i.test(qerr)) hints.push('1分あたりの呼び出し回数の上限に当たっている');
     if (genAvg > 20000) hints.push(`作問1回の応答が遅い（平均${fmtSec(genAvg)}）→ Gemini側が遅い／入力が長い`);
     const ver = kinds['品質チェック'] || [];
     if (ver.length && ver.reduce((a, c) => a + c.ms, 0) / ver.length > 15000) hints.push('品質チェックの応答が遅い → 設定で品質チェックをオフにすると速くなる（質は下がる）');
@@ -3726,6 +3730,17 @@
     saveGenLogs([]); localStorage.removeItem(GEN_LOG_KEY); showGenLogs();
   };
 
+  // ログ用に、APIのエラー（どの利用上限に当たったか・待つよう指定された時間）を短くまとめる
+  function apiErrSummary(data) {
+    const e = (data && data.error) || {};
+    const parts = [];
+    (e.details || []).forEach(d => {
+      (d.violations || []).forEach(x => { const id = x.quotaId || x.quotaMetric; if (id) parts.push(id.replace(/^.*\//, '') + (x.quotaValue ? `（上限${x.quotaValue}）` : '')); });
+      if (d.retryDelay) parts.push(`再試行まで${d.retryDelay}`);
+    });
+    return parts.length ? parts.join(' / ') : String(e.message || '').slice(0, 120);
+  }
+
   // ログ用に、呼び出しの種類（作問・品質チェックなど）と入力の長さを調べる
   function genLogInfo(payload) {
     const text = (((payload.contents || [])[0] || {}).parts || []).map(p => p.text || '').join('');
@@ -3735,6 +3750,7 @@
     return { kind, genre, count: kind === '作問' ? count : 0, chars: text.length };
   }
 
+  const aiProbe = { need: false, busy: false };
   async function geminiPost(modelName, apiKey, payload, signal) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     const send = async (think) => {
@@ -3751,7 +3767,7 @@
         const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal });
         const data = await res.json();
         const u = (data && data.usageMetadata) || {};
-        if (genLog) genLog.ev.push(Object.assign(info, { t: at, type: 'call', ms: Date.now() - t0, status: res.status, out: u.candidatesTokenCount, think: u.thoughtsTokenCount }));
+        if (genLog) genLog.ev.push(Object.assign(info, { t: at, type: 'call', ms: Date.now() - t0, status: res.status, out: u.candidatesTokenCount, think: u.thoughtsTokenCount }, res.ok ? {} : { err: apiErrSummary(data) }));
         return { res, data };
       } catch (e) {
         if (genLog && !(signal && signal.aborted)) genLog.ev.push(Object.assign(info, { t: at, type: 'call', ms: Date.now() - t0, status: 'ERR', err: timedOut ? '時間切れ' : String(e.message || e).slice(0, 60) }));
@@ -3762,7 +3778,22 @@
         if (signal) signal.removeEventListener('abort', onAbort);
       }
     };
-    let r = await send(geminiThinkingOk);
+    // 利用制限（429）を受けた後は、1件だけ試しに送り、成功するまで他は待つ（一斉に再開して、また制限を受けるのを防ぐ）
+    let probing = false;
+    while (aiProbe.need) {
+      const wait = aiPauseUntil - Date.now();
+      if (wait <= 0 && !aiProbe.busy) { aiProbe.busy = probing = true; break; }
+      if (signal && signal.aborted) throw new DOMException('aborted', 'AbortError');
+      await new Promise(res => setTimeout(res, Math.max(300, Math.min(wait, 2000))));
+    }
+    let r;
+    try {
+      r = await send(geminiThinkingOk);
+    } finally {
+      if (probing) aiProbe.busy = false;
+    }
+    if (r.res.status === 429) aiProbe.need = true;
+    else if (r.res.ok) aiProbe.need = false;
     if (!r.res.ok && r.res.status === 400 && geminiThinkingOk && /think/i.test(JSON.stringify(r.data && r.data.error || {}))) {
       geminiThinkingOk = false;
       r = await send(false);
