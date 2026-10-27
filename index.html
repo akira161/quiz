@@ -3039,7 +3039,7 @@
     if (!matomeNotes || currentSubject !== 'senmon') return "";
     const rows = matomeNotes.filter(n => n.isTrend && (!genre || genre === "all" || n.row['分野・ブロック'] === genre));
     if (rows.length === 0) return "";
-    const lines = rows.map(n => `■${n.title}（${n.row['時点・根拠'] || ''}）\n${n.row['最新の数値・内容'] || ''}`).join('\n').slice(0, 1500);   // 入力が長いと応答が遅くなるため
+    const lines = rows.map(n => `■${n.title}（${n.row['時点・根拠'] || ''}）\n${n.row['最新の数値・内容'] || ''}`).join('\n').slice(0, 600);   // 入力が長いと応答が遅くなるため
     return `\n\n【今年おさえるべき最新動向（統計・法改正）】\n${lines}\n\n作成する問題のうち1問程度は、上記の最新動向を踏まえた問題にしてください。数値や施行時期は上記の内容を正として使い、上記にない最新の数値を推測で作らないでください。`;
   }
 
@@ -3189,8 +3189,8 @@
   function historyPrompt(sub, genre) {
     const all = aiHistOf(sub).filter(e => !genre || !e.g || e.g === genre);
     if (!all.length) return '';
-    const recent = all.slice(-20), older = all.slice(0, -20);
-    const pick = older.length > 15 ? shuffleArray(older.slice()).slice(0, 15) : older;
+    const recent = all.slice(-10), older = all.slice(0, -10);   // 指示が長いと応答が遅くなるため、直近10件＋過去から5件だけ渡す
+    const pick = older.length > 5 ? shuffleArray(older.slice()).slice(0, 5) : older;
     const lines = recent.concat(pick).map(e => `・${(e.r || e.s).slice(0, 45)}`);
     return `\n\n【過去に出題した問題（これらと同じ知識・論点・数値設定は問わない。別の知識を問うこと）】\n${lines.join('\n')}`;
   }
@@ -3591,7 +3591,7 @@
     ]
   };
   const AI_BATCH_SIZE = 4;       // 1回に作らせる問題数（呼び出し回数が少ないほど、利用制限に当たりにくい）
-  const MOCK_CONCURRENCY = 5;    // 同時に作らせる数（利用制限を受けたら自動で減らす）
+  const MOCK_CONCURRENCY = 6;    // 同時に作らせる数（利用制限を受けたら自動で減らす）
 
   // Geminiの呼び出し。思考を浅くして速くする（対応していないモデルなら自動で外して再送する）
   let geminiThinkingOk = true;
@@ -4135,12 +4135,12 @@ ${body}`;
         if (wave > 0 && Date.now() - t0 > 150000 && totalDef <= 3) break;   // 時間がかかりすぎたら、わずかな不足は諦める
 
         const before = acceptedCount();
-        // 1) 作る単位（分野ごとに最大5問ずつ）を決める。不合格になる分を見込んで、多めに作らせる
+        // 1) 作る単位（分野ごとに最大3問ずつ。小分けにして並行で作るほど速い）を決める。不合格になる分を見込んで、多めに作らせる
         const tasks = [];
         deficits.forEach((d, gi) => {
           if (d <= 0) return;
-          const ask = Math.max(d + 1, Math.ceil(d * (wave === 0 ? 1.35 : 1.7)));
-          const nb = Math.ceil(ask / 5), base = Math.floor(ask / nb), extra = ask % nb;
+          const ask = Math.max(d + 1, Math.ceil(d * (wave === 0 ? 1.25 : 1.6)));
+          const nb = Math.ceil(ask / 3), base = Math.floor(ask / nb), extra = ask % nb;
           for (let k = 0; k < nb; k++) {
             const count = base + (k < extra ? 1 : 0);
             tasks.push({ gi, genre: plan[gi].genre, count, seeds: pickThemeSeeds(plan[gi].genre, count, usedThemes), cands: [] });
@@ -4150,7 +4150,7 @@ ${body}`;
 
         // 2) 同時に最大 MOCK_CONCURRENCY 件ずつ、並行して作らせる
         let nextTask = 0, active = 0, failed = false, doneTasks = 0;
-        const prevText = prevLines.slice(-40).join('\n') + (prevLines.length ? '\n' : '');
+        const prevText = prevLines.slice(-20).join('\n') + (prevLines.length ? '\n' : '');
         const runTask = async (t) => {
           try {
             t.cands = await fetchMockAIBatch(t.genre, t.count, apiKey, false, prevText, retryCallback, t.seeds, job);
@@ -4237,7 +4237,7 @@ ${body}`;
         seeds.map((sd, i) => `${i + 1}. ${sd.theme}`).join('\n');
     }
     // 最近の腕試しでAIが扱ったテーマは避ける
-    const recent = Array.from(recentThemeSet(currentSubject)).slice(-40);
+    const recent = Array.from(recentThemeSet(currentSubject)).slice(-20);
     const recentPrompt = recent.length > 0 ? `\n\n【最近の模試で出したテーマ（これらは避ける）】\n${recent.join('、')}` : "";
 
     const prompt = `あなたは${SUBJECTS[currentSubject].examName}の試験委員です。「${genre}」分野について、本番試験と同等の難易度と形式で、五肢択一問題を【${count}問】作成してください。${SUBJECT_AI_NOTES[currentSubject] ? '\n' + SUBJECT_AI_NOTES[currentSubject] : ''}
