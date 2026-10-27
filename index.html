@@ -3686,6 +3686,7 @@
     const fl = log.ev.filter(e => e.type === 'filter');
     const sum = k => fl.reduce((a, e) => a + (e[k] || 0), 0);
     const gen = sum('ok') + sum('copy') + sum('hist') + sum('bad');
+    if (sum('parse')) L.push(`応答を読み取れなかった回数: ${sum('parse')}回（その組は作り直し）`);
     if (fl.length) L.push(`作られた問題: ${gen}問 → 使える${sum('ok')} / 過去の出題記録と重複${sum('hist')} / 過去問とほぼ同じ${sum('copy')} / 形式の不備${sum('bad')}`);
     const busy = log.ev.filter(e => e.type === 'busy');
     if (busy.length) L.push(`混雑（429/503）: ${busy.length}回、待ち指定 合計${fmtSec(busy.reduce((a, b) => a + b.wait, 0))}`);
@@ -3723,6 +3724,7 @@
       } else if (e.type === 'wave') {
         L.push(`${at} ── 第${e.no}回: 不足${e.def}問 → ${e.tasks}組に分けて作成、候補${e.cands} → 重複除外${e.dup} → 品質除外${e.bad} → 採用${e.added}（この回 ${fmtSec(e.ms)}）`);
       } else if (e.type === 'filter') {
+        if (e.parse) { L.push(`         └ 読み取り失敗: ${e.why || ''}`); return; }
         L.push(`         └ ${e.ok + e.copy + e.hist + e.bad}問中 使える${e.ok}${e.hist ? ` / 記録と重複${e.hist}` : ''}${e.copy ? ` / 過去問と同じ${e.copy}` : ''}${e.bad ? ` / 不備${e.bad}` : ''}`);
       } else if (e.type === 'note') {
         L.push(`${at} ${e.text}`);
@@ -3840,8 +3842,8 @@ ${body}`;
     const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { response_mime_type: 'application/json' } };
     const { res, data } = await geminiPost(AI_MODEL, apiKey, payload, signal);
     if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
-    const txt = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const obj = JSON.parse(txt.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+    const txt = aiText(data) || '';
+    const obj = JSON.parse(repairJsonEscapes(txt.replace(/^```(?:json)?\s*|\s*```$/g, '')));
     return Array.isArray(obj.results) ? obj.results : (Array.isArray(obj) ? obj : []);
   }
   // list: normalizeAiQuestion の結果（または同じ形の問題）の配列。品質チェックを通った問題だけを返す。チェック自体に失敗したときは、そのまま通す
@@ -3908,8 +3910,8 @@ ${body}`;
         continue;
       }
       if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
-      const txt = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const obj = JSON.parse(txt.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+      const txt = aiText(data) || '';
+      const obj = JSON.parse(repairJsonEscapes(txt.replace(/^```(?:json)?\s*|\s*```$/g, '')));
       return Array.isArray(obj.explanations) ? obj.explanations : (Array.isArray(obj) ? obj : []);
     }
     throw new Error('混雑のため解説を作れませんでした');
@@ -4062,16 +4064,38 @@ ${body}`;
 
   // --- AIの応答の検証・整形 ---
   // JSON本文を取り出す（```json で囲まれていても、前後に説明文があっても読めるようにする）
+  // 応答の本文。複数のパートに分かれて返ることがあるので、思考（thought）以外をつなげる
+  function aiText(data) {
+    const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+    return parts.filter(p => !p.thought && typeof p.text === 'string').map(p => p.text).join('');
+  }
+  // AIがJSONの中にLaTeXをそのまま書くと（"\mathrm" "\times" など）、JSONとして読めない・\t がタブに化ける。
+  // 文字列中のバックスラッシュを、JSONのエスケープとして正しいもの以外は「\\」に直す
+  function repairJsonEscapes(t) {
+    return t.replace(/\\([\s\S])/g, (m, c, off, str) => {
+      if (c === '\\' || c === '"' || c === '/') return m;
+      if ('bfnrt'.includes(c)) return /[a-zA-Z]/.test(str[off + 2] || '') ? '\\\\' + c : m;   // \times \frac \beta \nu \rho など
+      if (c === 'u') return /^[0-9a-fA-F]{4}/.test(str.slice(off + 2, off + 6)) ? m : '\\\\u';
+      return '\\\\' + c;
+    });
+  }
   function extractAiQuestionList(text) {
     let t = String(text ?? '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    const a = t.indexOf('{'), a2 = t.indexOf('['), b = Math.max(t.lastIndexOf('}'), t.lastIndexOf(']'));
+    const start = a < 0 ? a2 : a2 < 0 ? a : Math.min(a, a2);
+    if (start < 0 || b <= start) throw new AiNoUsable("AIの応答を読み取れませんでした（JSONがない）");
+    t = repairJsonEscapes(t.slice(start, b + 1));
     let parsed;
     try { parsed = JSON.parse(t); }
     catch (e) {
-      const a = t.indexOf('{'), b = t.lastIndexOf('}');
-      if (a < 0 || b <= a) throw new AiNoUsable("AIの応答を読み取れませんでした");
-      try { parsed = JSON.parse(t.slice(a, b + 1)); } catch (e2) { throw new AiNoUsable("AIの応答を読み取れませんでした"); }
+      // 途中で切れている場合は、最後に完結している問題までを読む
+      const cut = t.lastIndexOf('},');
+      try { parsed = JSON.parse(t.slice(0, cut + 1) + ']}'); }
+      catch (e2) { throw new AiNoUsable(`AIの応答を読み取れませんでした（${String(e.message).slice(0, 60)}）`); }
     }
-    const list = Array.isArray(parsed) ? parsed : parsed && parsed.questions;
+    let list = Array.isArray(parsed) ? parsed : parsed && parsed.questions;
+    // "questions" 以外の名前で返ってきた場合も、問題の配列を探して使う
+    if (!Array.isArray(list) && parsed && typeof parsed === 'object') list = Object.values(parsed).find(v => Array.isArray(v) && v.length && typeof v[0] === 'object');
     if (!Array.isArray(list) || list.length === 0) throw new AiNoUsable("AIの応答に問題が含まれていませんでした");
     return list;
   }
@@ -4539,7 +4563,9 @@ ${AI_JSON_FORMAT}
            throw new Error(data.error?.message || "Unknown API Error");
         }
         
-        const list = extractAiQuestionList(data.candidates?.[0]?.content?.parts?.[0]?.text);
+        let list;
+        try { list = extractAiQuestionList(aiText(data)); }
+        catch (e) { logGen('filter', { genre, ok: 0, copy: 0, hist: 0, bad: 0, parse: 1, why: e.message + (data.candidates?.[0]?.finishReason && data.candidates[0].finishReason !== 'STOP' ? ` 終了理由:${data.candidates[0].finishReason}` : '') }); throw e; }
         // 形式が不正な問題（選択肢の数・正答が特定できない等）は除く
         const valid = [];
         const st = { ok: 0, copy: 0, hist: 0, bad: 0 };
@@ -5103,7 +5129,7 @@ ${AI_JSON_FORMAT}`;
       }
       throw new Error(`[${response.status}] ${result.error?.message || "通信エラー"}`);
     }
-    const list = extractAiQuestionList(result.candidates?.[0]?.content?.parts?.[0]?.text);
+    const list = extractAiQuestionList(aiText(result));
     // 形式が不正な問題（選択肢の数・正答が特定できない等）は除く
     const valid = [];
     list.forEach(raw => {
@@ -5431,7 +5457,7 @@ ${answerText}`;
       }
       throw new Error(`[${response.status}] ${result.error?.message || "通信エラー"}`);
     }
-    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    const text = aiText(result);
     if (!text) throw new Error("AIの応答が空でした");
     return { text, lite: useLiteModel };
   }
