@@ -2856,20 +2856,65 @@
     return h;
   }
 
+  // 印刷用のCSS（ページ内の @media print の .pp-* の規則）を取り出す。別ウィンドウの冊子でも同じ見た目にする
+  function paperCssText() {
+    const out = [];
+    Array.from(document.styleSheets).forEach(sh => {
+      let rules; try { rules = sh.cssRules; } catch (e) { return; }
+      Array.from(rules || []).forEach(r => {
+        if (!(r instanceof CSSMediaRule) || !/print/.test(r.conditionText || r.media.mediaText)) return;
+        Array.from(r.cssRules).forEach(x => {
+          const t = x.cssText;
+          if (/\.pp-|#print-root|@page/.test(t) && !/body\.printing\s*>/.test(t)) out.push(t.replace(/body\.printing\s+#print-root/g, '#print-root'));
+        });
+      });
+    });
+    return out.join('\n');
+  }
+
+  // 問題冊子を、別ウィンドウ（印刷専用のページ）に作って印刷する。
+  // iPad・iPhoneのSafariは、印刷の画面を出したあともページを描き直すため、元の画面を切り替える方式では、アプリの画面がそのまま印刷されてしまう
   async function printHtml(html, title) {
+    const w = window.open('', '_blank');   // ボタンを押した直後に開かないと、ポップアップとしてブロックされる
+    if (w) { w.document.write('<!DOCTYPE html><meta charset="utf-8"><title>準備中…</title><p style="font-family:sans-serif;padding:24px;">問題冊子を準備しています…</p>'); w.document.close(); }
     const root = document.getElementById('print-root');
-    if (root.parentElement !== document.body) document.body.appendChild(root);   // 印刷時は、body直下に置いて他を隠す
+    if (root.parentElement !== document.body) document.body.appendChild(root);
     root.innerHTML = html;
     // 数式の整形と、画像の読み込みが終わってから印刷する
     try { await typesetMath([root]); } catch (e) {}
     await Promise.all(Array.from(root.querySelectorAll('img')).map(img => img.complete ? null : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 5000); })));
+
+    if (w && !w.closed) {
+      const mjx = Array.from(document.querySelectorAll('style')).filter(st => /^MJX/i.test(st.id || '')).map(st => st.outerHTML).join('\n');
+      const doc = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>${mjx}
+<style>
+  body { margin: 0; background: #e5e7eb; color: #000; }
+  #print-root { display: block; background: #fff; max-width: 190mm; margin: 0 auto; padding: 14mm; box-sizing: border-box; font-size: 10.5pt; line-height: 1.65; font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif; }
+  .pp-bar { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; padding: 10px 12px; background: #1e293b; color: #fff; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif; }
+  .pp-bar button { font: inherit; font-weight: bold; border: none; border-radius: 8px; padding: 8px 16px; background: #4f46e5; color: #fff; cursor: pointer; }
+  .pp-bar button.sub { background: #475569; }
+  .pp-bar small { flex-basis: 100%; text-align: center; opacity: 0.85; }
+  .pp-foot { display: none; }
+  @media print { body { background: #fff; } .pp-bar { display: none !important; } #print-root { max-width: none; margin: 0; padding: 0; } .pp-foot { display: block; } }
+  ${paperCssText()}
+</style></head><body>
+<div class="pp-bar"><button onclick="window.print()">🖨 印刷・PDFとして保存</button><button class="sub" onclick="window.close()">閉じる</button>
+<small>PDFにするには、印刷の画面で「PDFとして保存」を選びます（iPad・iPhone: 印刷画面の右上の共有ボタン →「ファイルに保存」）</small></div>
+<div id="print-root">${root.innerHTML}</div></body></html>`;
+      w.document.open(); w.document.write(doc); w.document.close();
+      root.innerHTML = '';
+      return;
+    }
+
+    // ポップアップがブロックされた場合: 元の画面を印刷用に切り替える（パソコンのブラウザ向け）
+    showToast('新しいタブを開けなかったため、この画面で印刷します');
     const oldTitle = document.title;
     document.title = title;
     document.body.classList.add('printing');
     const done = () => { document.body.classList.remove('printing'); document.title = oldTitle; root.innerHTML = ''; window.removeEventListener('afterprint', done); };
     window.addEventListener('afterprint', done);
     setTimeout(() => window.print(), 100);
-    setTimeout(done, 20000);   // afterprint が来ない環境（一部のスマホ）でも、画面が隠れたままにならないようにする
   }
 
   window.printMockPaper = async function(kind) {
@@ -2877,7 +2922,7 @@
     if (mockState.phase === 'exam' && kind === 'answers') { showToast('採点後に出力できます'); return; }
     const ctx = { subject: mockState.subject || currentSubject, questions: filteredQuestions, answers: sessionAnswers || {}, extra: mockState.extraAnswers || {}, label: mockState.sourceLabel, minutes: Math.round((mockState.timeLimitSec || 0) / 60) };
     const sj = SUBJECTS[ctx.subject] || SUBJECTS.senmon;
-    showToast('PDF出力の画面を開きます。「PDFとして保存」を選んでください');
+    showToast('問題冊子を新しいタブで開きます');
     await printHtml(buildPaperHtml(kind, ctx), `模擬試験_${sj.label}_${kind === 'answers' ? '解答解説' : '問題冊子'}_${isoDate(Date.now())}`);
   };
 
@@ -2891,7 +2936,7 @@
     if (!questions.length) { showToast('出題できる問題がありません'); return; }
     const sj = SUBJECTS[currentSubject];
     const ctx = { subject: currentSubject, questions, answers: {}, extra: {}, label: document.getElementById('mock-source').selectedOptions[0].text, minutes: parseInt(document.getElementById('mock-time').value, 10) };
-    showToast('PDF出力の画面を開きます。「PDFとして保存」を選んでください');
+    showToast('問題冊子を新しいタブで開きます');
     await printHtml(buildPaperHtml('booklet', ctx), `模擬試験_${sj.label}_問題冊子_${isoDate(Date.now())}`);
   };
 
