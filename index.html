@@ -2885,7 +2885,12 @@
     await Promise.all(Array.from(root.querySelectorAll('img')).map(img => img.complete ? null : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 5000); })));
 
     if (w && !w.closed) {
-      const mjx = Array.from(document.querySelectorAll('style')).filter(st => /^MJX/i.test(st.id || '')).map(st => st.outerHTML).join('\n');
+      // MathJaxは数式用のCSSを insertRule で足していくため、style要素の中身（outerHTML）には入っていない。CSSの規則から書き出す
+      const mjx = Array.from(document.querySelectorAll('style')).filter(st => /^MJX/i.test(st.id || '')).map(st => {
+        let css = '';
+        try { css = Array.from(st.sheet.cssRules).map(r => r.cssText).join('\n'); } catch (e) { css = st.textContent; }
+        return `<style>${css}</style>`;
+      }).join('\n');
       const doc = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>${mjx}
 <style>
@@ -2899,9 +2904,24 @@
   @media print { body { background: #fff; } .pp-bar { display: none !important; } #print-root { max-width: none; margin: 0; padding: 0; } .pp-foot { display: block; } }
   ${paperCssText()}
 </style></head><body>
-<div class="pp-bar"><button onclick="window.print()">🖨 印刷・PDFとして保存</button><button class="sub" onclick="window.close()">閉じる</button>
+<div class="pp-bar"><button id="pp-print" onclick="window.print()" disabled>数式の文字を読み込み中…</button><button class="sub" onclick="window.close()">閉じる</button>
 <small>PDFにするには、印刷の画面で「PDFとして保存」を選びます（iPad・iPhone: 印刷画面の右上の共有ボタン →「ファイルに保存」）</small></div>
-<div id="print-root">${root.innerHTML}</div></body></html>`;
+<div id="print-root">${root.innerHTML}</div>
+<script>
+  // 数式の文字（MathJaxのフォント）を読み込んでから印刷できるようにする。読み込む前に印刷すると、数字や記号が抜ける
+  (function () {
+    var b = document.getElementById('pp-print'), done = false;
+    function ready() { if (done) return; done = true; b.disabled = false; b.textContent = '🖨 印刷・PDFとして保存'; }
+    if (document.fonts && document.fonts.ready) {
+      // 使われている数式フォントを明示的に読み込む（表示されるまで読み込まれないことがあるため）
+      var fams = {};
+      document.querySelectorAll('mjx-container [class*="TEX-"], mjx-container mjx-c').forEach(function (el) { var f = getComputedStyle(el, '::before').fontFamily || getComputedStyle(el).fontFamily; if (f) fams[f] = 1; });
+      Promise.all(Object.keys(fams).map(function (f) { return document.fonts.load('16px ' + f).catch(function () {}); }))
+        .then(function () { return document.fonts.ready; }).then(ready, ready);
+    } else ready();
+    setTimeout(ready, 10000);
+  })();
+<\/script></body></html>`;
       w.document.open(); w.document.write(doc); w.document.close();
       root.innerHTML = '';
       return;
