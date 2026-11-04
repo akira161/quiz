@@ -1407,6 +1407,7 @@
     const key = document.getElementById('api-key-input').value.trim();
     if (key) {
       localStorage.setItem('my_gemini_api_key', key);
+      schedulePracticeWarm();
       const statusEl = document.getElementById('api-key-status');
       statusEl.textContent = "✅ ブラウザに安全に保存しました！";
       statusEl.style.color = "var(--success-text)";
@@ -1842,6 +1843,7 @@
   }
 
   window.updateFilterUI = function() {
+    setTimeout(schedulePracticeWarm, 0);   // 絞り込みに合わせて、AI網羅特訓の最初の5問を裏で作っておく
     const el = id => document.getElementById(id);
     const sj = SUBJECTS[currentSubject];
     const sel = { year: el('year-filter'), genre: el('genre-filter'), sub: el('subgenre-filter'), topic: el('topic-filter'), prio: el('priority-filter') };
@@ -2093,7 +2095,7 @@
   }
   window.setAiEnabled = function(on) {
     if (!on && currentAiJob && !currentAiJob.aborted) { currentAiJob.cancel(); hideAiLoading(); }
-    if (!on) { cancelPracticePrefetch(); cancelMockPrep(); }
+    if (!on) { cancelPracticePrefetch(); cancelMockPrep(); cancelPracticeWarm(); }
     savePref('aiOff', !on);
     applyAiEnabled();
     showToast(on ? 'AI機能をオンにしました' : 'AI機能をオフにしました');
@@ -5079,6 +5081,7 @@ ${AI_JSON_FORMAT}
     }
 
     cancelPracticePrefetch();
+    const warm = takePracticeWarm();   // スタート画面で作っておいた最初の5問があれば使う
     window.isViewingPastMock = false;
     isMockMode = false;
     isAiMode = true;
@@ -5091,6 +5094,7 @@ ${AI_JSON_FORMAT}
     document.getElementById('mock-nav').style.display = 'none';
 
     switchScreen('screen-quiz');
+    if (warm) practicePrefetch = warm;
     await generateAIQuestionsBatch();
     
     clearSavedSession();
@@ -5111,6 +5115,77 @@ ${AI_JSON_FORMAT}
     const entry = { key: practiceKey(), controller, promise: null };
     entry.promise = requestPracticeAI(false, controller.signal).catch(e => { console.warn('先読みに失敗しました（次へ進むときに改めて作ります）:', e.message); return null; });
     practicePrefetch = entry;
+  }
+
+  // --- 網羅特訓: 最初の5問も、スタート画面にいる間に作っておく（ボタンを押したらすぐ始められる） ---
+  // 作った5問は端末に保存し、ページを開き直しても使える。分野などの絞り込みが変わったら作り直す
+  const PRACTICE_CACHE_KEY = 'ai_practice_cache_v1';
+  const PRACTICE_CACHE_TTL = 24 * 3600 * 1000;
+  let practiceWarm = null;      // { key, promise, controller } 作成中のもの
+  let practiceWarmTimer = null;
+  function loadPracticeCache() { try { return JSON.parse(localStorage.getItem(PRACTICE_CACHE_KEY) || 'null'); } catch (e) { return null; } }
+  function practiceCacheFor(key) {
+    const c = loadPracticeCache();
+    return c && c.key === key && Date.now() - c.t < PRACTICE_CACHE_TTL && Array.isArray(c.valid) && c.valid.length ? c : null;
+  }
+  function updatePracticeReady() {
+    const el = document.querySelector('#start-ai-btn span');
+    if (!el) return;
+    const key = practiceKey();
+    el.textContent = practiceCacheFor(key) ? '✅ 最初の5問は準備済み（すぐ始められます）'
+      : (practiceWarm && practiceWarm.key === key) ? '⏳ 最初の5問を準備中…' : '5問ずつAIが予想問題を生成';
+  }
+  function cancelPracticeWarm() {
+    clearTimeout(practiceWarmTimer);
+    if (practiceWarm) { try { practiceWarm.controller.abort(); } catch (e) {} practiceWarm = null; }
+  }
+  // 絞り込みを変えるたびに作らないよう、少し待ってから作り始める
+  function schedulePracticeWarm() {
+    clearTimeout(practiceWarmTimer);
+    updatePracticeReady();
+    practiceWarmTimer = setTimeout(startPracticeWarm, 3000);
+  }
+  function startPracticeWarm() {
+    const active = document.querySelector('.screen.active');
+    if (!active || active.id !== 'screen-start') return;
+    if (isAiOff() || !localStorage.getItem('my_gemini_api_key') || navigator.onLine === false) return;
+    if (!allQuestions || !allQuestions.length) return;
+    const key = practiceKey();
+    if (practiceCacheFor(key) || (practiceWarm && practiceWarm.key === key)) { updatePracticeReady(); return; }
+    if ((currentAiJob && !currentAiJob.aborted) || mockPrep) return;   // 別のAI生成中は、利用制限に当たらないよう作らない
+    if (practiceWarm) { try { practiceWarm.controller.abort(); } catch (e) {} }
+    const controller = new AbortController();
+    const entry = { key, controller, promise: null };
+    entry.promise = requestPracticeAI(false, controller.signal)
+      .then(got => {
+        if (got && got.valid && got.valid.length) {
+          try { localStorage.setItem(PRACTICE_CACHE_KEY, JSON.stringify({ key, t: Date.now(), valid: got.valid, lite: got.lite })); } catch (e) {}
+        }
+        return got;
+      })
+      .catch(e => { if (e.name !== 'AbortError' && !(e instanceof AiCancelled)) console.warn('AI網羅特訓の先行作成に失敗しました:', e.message); return null; })
+      .finally(() => { if (practiceWarm === entry) practiceWarm = null; updatePracticeReady(); });
+    practiceWarm = entry;
+    updatePracticeReady();
+  }
+  // 始めるときに、準備済みの5問（または作成中のもの）を「先読み」として渡す
+  function takePracticeWarm() {
+    const key = practiceKey();
+    const c = practiceCacheFor(key);
+    if (c) {
+      localStorage.removeItem(PRACTICE_CACHE_KEY);
+      cancelPracticeWarm();
+      return { key, controller: new AbortController(), promise: Promise.resolve({ valid: c.valid, lite: c.lite }) };
+    }
+    clearTimeout(practiceWarmTimer);
+    const w = practiceWarm;
+    practiceWarm = null;
+    if (w && w.key === key) {
+      // 作成中のものを使う。保存はされるので、使ったら消す
+      return { key, controller: w.controller, promise: w.promise.then(got => { localStorage.removeItem(PRACTICE_CACHE_KEY); return got; }) };
+    }
+    if (w) { try { w.controller.abort(); } catch (e) {} }
+    return null;
   }
 
   // AIに予想問題5問を作らせて、使える問題だけを返す（画面は触らない）
