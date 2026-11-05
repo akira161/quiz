@@ -899,6 +899,7 @@
       
       <button id="ai-explain-btn" class="nav-btn" style="margin-top: 20px; width: 100%; background: linear-gradient(135deg, #a855f7, #d946ef); font-size: 0.95rem; display: none; box-shadow: 0 2px 8px rgba(168, 85, 247, 0.3);" onclick="askAIExplain()">✨ AIにさらに詳しく解説してもらう</button>
       
+      <div id="ai-explain-error" style="display: none; margin-top: 8px; padding: 10px 12px; border-radius: 8px; font-size: 0.85rem; line-height: 1.6; color: var(--danger-text); background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.3);"></div>
       <div id="ai-explain-loading" style="display: none; text-align: center; margin-top: 20px; padding: 20px; background: rgba(168,85,247,0.05); border-radius: 8px; border: 1px dashed rgba(168,85,247,0.3);">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spinner"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
         <div id="ai-explain-loading-msg" style="font-weight: bold; color: #a855f7; margin-top: 8px; font-size: 0.9rem;">AIが詳細な解説を生成しています...</div>
@@ -5448,6 +5449,9 @@ ${AI_JSON_FORMAT}`;
     document.getElementById('exp-box').classList.remove('show');
     document.getElementById('ai-explain-result').style.display = 'none';
     document.getElementById('ai-explain-btn').style.display = 'none';
+    document.getElementById('ai-explain-btn').textContent = '✨ AIにさらに詳しく解説してもらう';
+    document.getElementById('ai-explain-loading').style.display = 'none';
+    document.getElementById('ai-explain-error').style.display = 'none';
     document.getElementById('note-link-btn').style.display = 'none';
     
     const nextBtn = document.getElementById('next-btn');
@@ -5543,10 +5547,20 @@ ${AI_JSON_FORMAT}`;
   }
 
   // AI詳細解説を生成する（混雑時は軽量モデルに切り替え）
-  async function fetchAIExplanation(q, useLiteModel = false) {
+  // APIのエラーを、利用者向けの分かりやすい文にする
+  function friendlyApiError(status, data) {
+    const detail = apiErrSummary(data);
+    if (status === 429 && /PerDay/i.test(detail)) return '今日のGemini APIの利用上限（無料枠）に達しました。日本時間の16〜17時ごろに回復します。';
+    if (status === 429) return 'Gemini APIの利用制限（1分あたりの回数）に達しました。1分ほど待ってから、もう一度お試しください。';
+    if (status === 503 || status === 500) return 'Geminiが混雑しています（一時的なものです）。少し時間をおいて、もう一度お試しください。';
+    if (status === 400 || status === 403) return `APIキーかリクエストに問題があります（${status}）。設定のAPIキーを確認してください。`;
+    return `[${status}] ${(data && data.error && data.error.message) || '通信エラー'}`;
+  }
+
+  // onStatus(msg): 混雑で待っている間の状況を知らせる
+  async function fetchAIExplanation(q, useLiteModel = false, onStatus = null) {
     const apiKey = localStorage.getItem('my_gemini_api_key');
     const modelName = AI_MODEL;
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
     const sj = SUBJECTS[q.subject] || SUBJECTS.senmon;
     const answerText = q.allCorrect
@@ -5583,23 +5597,35 @@ ${answerText}`;
       } catch (e) { console.warn("問題画像を添付できませんでした:", e); }
     }
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts }] })
-    });
-    const result = await response.json();
-
-    if (!response.ok) {
-      if ((response.status === 429 || response.status === 503) && !useLiteModel && !AI_ALWAYS_LITE) {
-        console.warn(`API制限または高負荷(${response.status})を検知。Liteモデルで解説を生成します...`);
-        return fetchAIExplanation(q, true);
+    // 混雑（503）や一時的な利用制限（429）は、時間をおいて自動でやり直す（1日の上限のときは、やり直しても無駄なのですぐ知らせる）
+    const payload = { contents: [{ parts }] };
+    const WAITS = [3000, 6000, 12000, 20000];
+    for (let attempt = 0; ; attempt++) {
+      await waitAiPause(null);
+      let res, data;
+      try {
+        ({ res, data } = await geminiPost(modelName, apiKey, payload));
+      } catch (e) {
+        if (attempt >= 1) throw e;   // 通信エラー・時間切れは1回だけやり直す
+        if (onStatus) onStatus('応答がなかったため、もう一度試しています…');
+        continue;
       }
-      throw new Error(`[${response.status}] ${result.error?.message || "通信エラー"}`);
+      if (res.ok) {
+        const text = aiText(data);
+        if (!text) throw new Error("AIの応答が空でした");
+        return { text, lite: useLiteModel };
+      }
+      const st = res.status;
+      const daily = st === 429 && /PerDay/i.test(apiErrSummary(data));
+      if ((st === 429 || st === 503 || st === 500) && !daily && attempt < WAITS.length) {
+        const wait = st === 429 ? Math.min(retryDelayMs(res, data), 30000) : WAITS[attempt];
+        if (st === 429) aiPauseUntil = Math.max(aiPauseUntil, Date.now() + wait);
+        if (onStatus) onStatus(`Geminiが混雑しています。${Math.round(wait / 1000)}秒後に自動でやり直します（${attempt + 1}/${WAITS.length}回目）`);
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+      throw new Error(friendlyApiError(st, data));
     }
-    const text = aiText(result);
-    if (!text) throw new Error("AIの応答が空でした");
-    return { text, lite: useLiteModel };
   }
 
   function showAIExplanation(q) {
@@ -5630,17 +5656,22 @@ ${answerText}`;
     document.getElementById("ai-explain-loading-msg").innerHTML = "AIが詳細な解説を生成しています...";
     loading.style.display = "block";
 
+    const errEl = document.getElementById('ai-explain-error');
+    errEl.style.display = 'none';
+    const onScreen = () => filteredQuestions[curIdx] === q;
     try {
-      const r = await fetchAIExplanation(q);
+      const r = await fetchAIExplanation(q, false, msg => { if (onScreen()) document.getElementById("ai-explain-loading-msg").textContent = msg; });
       saveExplanation(q, r.text, r.lite);
-      loading.style.display = "none";
       // 生成中に別の問題へ移動していたら表示しない（保存はする）
-      if (filteredQuestions[curIdx] === q) showAIExplanation(q);
+      if (onScreen()) { loading.style.display = "none"; showAIExplanation(q); }
     } catch(e) {
       console.error("AI解説生成エラー", e);
+      if (!onScreen()) return;
       loading.style.display = "none";
       btn.style.display = "block";
-      alert(`AI解説の生成に失敗しました。\n\n【詳細】\n${e.message}`);
+      btn.textContent = '🔄 もう一度AIに解説してもらう';
+      errEl.textContent = '⚠️ AI解説を作れませんでした: ' + e.message;
+      errEl.style.display = 'block';
     }
   }
 
@@ -5953,13 +5984,13 @@ ${answerText}`;
         btn.disabled = true;
         btn.textContent = '生成中...';
         try {
-          const r = await fetchAIExplanation(q);
+          const r = await fetchAIExplanation(q, false, msg => { btn.textContent = '⏳ ' + msg; });
           saveExplanation(q, r.text, r.lite);
           renderHistoryExtras(box, q);
         } catch (e) {
           btn.disabled = false;
-          btn.textContent = '✨ AI詳細解説を生成して保存';
-          alert(`AI解説の生成に失敗しました。\n\n【詳細】\n${e.message}`);
+          btn.textContent = '🔄 もう一度AI詳細解説を生成する';
+          showToast('AI解説を作れませんでした: ' + e.message);
         }
       };
       box.appendChild(btn);
