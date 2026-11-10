@@ -3,8 +3,8 @@
 // - 問題画像: 保存分を優先
 // - CDNのライブラリ: 保存分を優先（バージョン固定のため）
 // - Gemini API: 保存しない（常に通信）
-// 先に保存する一覧は tools/build_db.py が precache.json に書き出す。データを作り直したら CACHE_NAME の番号を上げる
-const CACHE_NAME = 'quiz-cache-v37';
+// 先に保存する一覧は tools/build_db.py が precache.json に書き出す。CACHE_NAME は tools/stamp_sw.py がファイルの中身から自動で決める
+const CACHE_NAME = 'quiz-cache-b8bdbcd7b7';
 const NETWORK_TIMEOUT_MS = 4000;
 
 // 先に保存するファイル（アプリ本体・科目DB・まとめノート・図が必要な問題の画像）の一覧は precache.json にある
@@ -89,7 +89,7 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin === self.location.origin) {
-    // 問題画像は問題IDごとに固定なので、保存分を優先する（データを作り直したら CACHE_NAME の番号を上げる）
+    // 問題画像は問題IDごとに固定なので、保存分を優先する（データを作り直すと CACHE_NAME が変わり、入れ替わる）
     event.respondWith(url.pathname.includes('/figures/') ? cacheFirst(request) : networkFirst(request));
   } else if (CDN_HOSTS.includes(url.hostname)) {
     event.respondWith(cacheFirst(request));

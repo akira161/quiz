@@ -1,6 +1,7 @@
 [
 "./",
 "index.html",
+"js/core.js",
 "viewer.html",
 "guide.json",
 "guide.html",

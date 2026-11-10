@@ -694,6 +694,7 @@
       <div class="chips" id="memory-chips">
         <button class="chip" data-mem="all" onclick="setMemoryChip('all')">すべて</button>
         <button class="chip" data-mem="unanswered" onclick="setMemoryChip('unanswered')">未回答</button>
+        <button class="chip" data-mem="due" onclick="setMemoryChip('due')">🔁 今日の復習</button>
         <button class="chip" data-mem="wrong" onclick="setMemoryChip('wrong')">間違えた問題</button>
         <button class="chip" data-mem="bookmark" onclick="setMemoryChip('bookmark')">★ ブックマーク</button>
       </div>
@@ -707,7 +708,7 @@
       </div>
       <div class="chip-label"><label for="order-filter" style="margin:0;">出題順</label></div>
       <select id="order-filter" class="filter-select" onchange="onPrefChange()">
-        <option value="trend" selected>🔥 傾向重視（最近の頻出優先）</option>
+        <option value="trend" selected>🔥 傾向＋苦手を優先（頻出・間違えた・復習時期の問題から）</option>
         <option value="random">ランダム順</option>
         <option value="original">出題順（年度・番号）</option>
       </select>
@@ -761,6 +762,7 @@
             <select id="memory-filter" class="filter-select" onchange="updateFilterUI()">
               <option value="all">すべての問題から出題</option>
               <option value="unanswered">未回答の問題</option>
+              <option value="due">🔁 今日の復習（復習の時期が来た問題）</option>
               <option value="wrong">過去に間違えた問題 (復習)</option>
               <option value="perfect">過去に正解した問題のみ</option>
               <option value="ai-saved">AI解説を保存した問題のみ</option>
@@ -1184,6 +1186,7 @@
 
 </div>
 
+<script src="js/core.js"></script>
 <script>
   // --- 科目の設定（専門・基礎・適性） ---
   const SUBJECTS = {
@@ -1262,26 +1265,23 @@
       scheduleNotionSync();
     }
   }
-  function bumpStats(isCorrect, q) {
+  function bumpStats(isCorrect, q, wasDue) {
     const s = statsOf(currentSubject);
     s.total++;
     if (isCorrect) s.correct++;
-    if (q) logDaily(q, isCorrect);
-  }
-  // 端末の日付（日本時間など、その土地の日付）で YYYY-MM-DD
-  function localDate(t = Date.now()) {
-    const d = new Date(t);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (q) logDaily(q, isCorrect, wasDue);
   }
   // 日ごとの解答数（学習スケジュールの進み具合の判定に使う）。分野ごとにも数える。60日分だけ残す
-  function logDaily(q, isCorrect) {
+  function logDaily(q, isCorrect, wasDue) {
     const k = localDate();
     const all = userMemory.daily = userMemory.daily || {};
     const e = all[k] = all[k] || { n: 0, c: 0, g: {} };
     e.n++;
     if (isCorrect) e.c++;
-    const gk = (q.subject || subjectOfId(q.id)) + '|' + (isAiQuestion(q) ? 'AI' : (q.genre || ''));
+    const sub = q.subject || subjectOfId(q.id);
+    const gk = sub + '|' + (isAiQuestion(q) ? 'AI' : (q.genre || ''));
     e.g[gk] = (e.g[gk] || 0) + 1;
+    if (wasDue) { e.r = e.r || {}; e.r[sub] = (e.r[sub] || 0) + 1; }   // 復習の時期が来ていた問題を解いた数
     const keys = Object.keys(all).sort();
     while (keys.length > 60) delete all[keys.shift()];
   }
@@ -1307,29 +1307,6 @@
     return { has: true, answer: nums[0], also: nums.slice(1), all: false };
   }
 
-  // 正答が登録されているか（AI生成や旧形式の問題には hasAnswer がないので answer の有無で判定）
-  function hasAnswerOf(q) {
-    return !!q.allCorrect || (q.hasAnswer !== false && Number.isInteger(q.answer) && q.answer >= 0);
-  }
-
-  function isCorrectAnswer(q, selectedIdx) {
-    if (!hasAnswerOf(q)) return false;
-    if (q.allCorrect) return true;
-    return selectedIdx === q.answer || (q.alsoCorrect || []).includes(selectedIdx);
-  }
-
-  function correctIndexes(q) {
-    if (!hasAnswerOf(q)) return [];
-    if (q.allCorrect) return q.options.map((_, i) => i);
-    return [q.answer, ...(q.alsoCorrect || [])];
-  }
-
-  // 正解の表示文（複数正解・全員正解に対応）
-  function correctLabel(q) {
-    if (!hasAnswerOf(q)) return '（正答未登録）';
-    if (q.allCorrect) return '全員正解（不適切な出題）';
-    return [q.answer, ...(q.alsoCorrect || [])].map(i => i + 1).join(' または ');
-  }
 
   function escapeHtml(str) {
     return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1337,34 +1314,6 @@
 
   // DB由来の問題は記号（< > * _ | など）をそのまま表示するため、Markdownに変換しない。AI生成の問題はMarkdown/LaTeXで表示する
 
-  // --- 数式の表示（AIが返す問題・解説に含まれるLaTeX） ---
-  // 「$...$」で囲まれていない生のLaTeX（\text{35.4 %} など）を、$...$ で囲んで数式として表示できるようにする
-  const MATH_SRC = String.raw`\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$`;
-  const BARE_LATEX_RE = new RegExp(String.raw`[^　-鿿＀-￯\n*#$]*(?:\\[a-zA-Z]+|[\^_]\{)[^　-鿿＀-￯\n*#$]*`, 'g');
-  function fixMathText(text) {
-    const s = String(text ?? '');
-    if (!/\\[a-zA-Z]|[\^_]\{/.test(s) && s.indexOf('%') < 0) return s;
-    // TeXでは % が注釈の開始になり、後ろが消えてしまう。\text{ } の中では \% が使えないので、外に出して \% にする
-    const escPct = m => m
-      .replace(/\\(text|mathrm|mbox)\{([^{}]*)\}/g, (all, cmd, inner) => {
-        inner = inner.replace(/\\%/g, '%');
-        return inner.indexOf('%') < 0 ? all : inner.split('%').map(x => x ? `\\${cmd}{${x}}` : '').join('\\%');
-      })
-      .replace(/(?<!\\)%/g, '\\%');
-    const wrapBare = seg => seg.replace(BARE_LATEX_RE, run => {
-      const core = run.trim();
-      if (!core) return run;
-      const lead = run.slice(0, run.indexOf(core));
-      return `${lead}$${escPct(core)}$${run.slice(lead.length + core.length)}`;
-    });
-    const re = new RegExp(MATH_SRC, 'g');
-    let out = '', last = 0, m;
-    while ((m = re.exec(s))) {
-      out += wrapBare(s.slice(last, m.index)) + escPct(m[0]);
-      last = m.index + m[0].length;
-    }
-    return out + wrapBare(s.slice(last));
-  }
   // Markdownに変換する。数式の中の \ { } _ * がMarkdownに壊されないよう、数式部分は退避しておく
   function markedWithMath(text) {
     const store = [];
@@ -1717,6 +1666,7 @@
     const qs = await loadSubjectQuestions(key, buffer);
     currentSubject = key;
     allQuestions = qs;
+    setBigramIdf(qs.map(q => q.question + (q.options || []).join('')));   // 似た問題の判定で、科目でよく出る言い回しを軽く扱う
     userMemory.subject = key;
     saveUserData();
     ['year-filter', 'genre-filter', 'subgenre-filter', 'topic-filter', 'priority-filter', 'memory-filter'].forEach(id => { document.getElementById(id).value = 'all'; });
@@ -1958,6 +1908,7 @@
       const h = userMemory.history[q.id];
       if (currentMemory === 'unanswered') return !h || (h.c === 0 && h.w === 0);
       if (currentMemory === 'wrong') return h && h.w > 0;
+      if (currentMemory === 'due') return srsIsDue(h, endOfDay(localDate()));
       if (currentMemory === 'perfect') return h && h.c > 0 && h.w === 0;
       if (currentMemory === 'ai-saved') return !!savedExplanations[q.id];
       if (currentMemory === 'bookmark') return isBookmarked(q.id);
@@ -2009,9 +1960,10 @@
       all: memCount(() => true),
       unanswered: memCount(q => { const h = hist(q); return !h || (h.c === 0 && h.w === 0); }),
       wrong: memCount(q => { const h = hist(q); return h && h.w > 0; }),
+      due: memCount(q => srsIsDue(hist(q), endOfDay(localDate()))),
       bookmark: allQuestions.concat(aiBookmarkQuestions(currentSubject)).filter(q => keys.every(o => match[o](q)) && fKw(q) && isBookmarked(q.id)).length
     };
-    const chipNames = { all: 'すべて', unanswered: '未回答', wrong: '間違えた問題', bookmark: '★ ブックマーク' };
+    const chipNames = { all: 'すべて', unanswered: '未回答', due: '🔁 今日の復習', wrong: '間違えた問題', bookmark: '★ ブックマーク' };
     document.querySelectorAll('#memory-chips .chip').forEach(c => {
       const k = c.dataset.mem;
       c.textContent = `${chipNames[k]}（${chipCounts[k]}）`;
@@ -2053,9 +2005,11 @@
   function getWeightedRandomQuestions(pool, count) {
     if (count >= pool.length) return shuffleArray([...pool]);
 
+    // 出題傾向（最近よく出る論点）に、自分の学習状況（間違えたまま・復習の時期・未回答を優先、覚えた問題・直前に解いた問題は控えめ）を掛け合わせる
+    const now = Date.now();
     let weightedPool = pool.map(q => {
       let scoreObj = topicTrendScores[q.topic];
-      let weight = scoreObj ? scoreObj.raw : 1;
+      let weight = (scoreObj ? scoreObj.raw : 1) * personalWeight(userMemory.history[q.id], now);
       return { q: q, weight: weight };
     });
 
@@ -2721,9 +2675,6 @@
   window.addEventListener('online', () => scheduleNotionSync(1000));
 
 
-  // ===== 学習スケジュール: 試験日までの毎日の計画を、正答状況と本試験の出題数から作る =====
-  const PLAN_MOCK_MIN = { senmon: 120, kiso: 60, tekisei: 60 };   // 腕試しの試験時間（分）。見直しに30分を足す
-  const MIN_PER_Q = 2;                                              // 過去問1問あたり（解く＋解説を読む）の目安（分）
   function planCfg() {
     const p = userMemory.plan = userMemory.plan || {};
     if (!p.examDate) p.examDate = '2026-11-22';
@@ -2733,12 +2684,6 @@
     if (!p.done) p.done = {};
     return p;
   }
-  function addDays(ds, n) { const [y, m, d] = ds.split('-').map(Number); return localDate(new Date(y, m - 1, d + n)); }
-  function dayDiff(a, b) { const f = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).getTime(); }; return Math.round((f(b) - f(a)) / 864e5); }
-  const isWeekendDate = ds => { const [y, m, d] = ds.split('-').map(Number); const w = new Date(y, m - 1, d).getDay(); return w === 0 || w === 6; };
-  const WEEK_JA = ['日', '月', '火', '水', '木', '金', '土'];
-  const dayLabel = ds => { const [y, m, d] = ds.split('-').map(Number); return `${m}/${d}（${WEEK_JA[new Date(y, m - 1, d).getDay()]}）`; };
-  const fmtMin = m => m >= 60 ? `${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + '分' : ''}` : `${m}分`;
 
   // 科目・分野ごとの到達度。「いま正解できる問題」の割合（最後に正解した問題）を、未回答も考慮してならす
   async function planAnalysis() {
@@ -2750,7 +2695,11 @@
       try { qs = (await loadSubjectQuestions(key)).filter(q => hasAnswerOf(q)); } catch (e) { continue; }
       const years = Math.max(1, new Set(qs.map(q => q.year)).size);
       const gmap = {};
+      const dueTimes = [];   // 復習の時期（間違えたままの以前の記録は「今」）
+      const now = Date.now();
       qs.forEach(q => {
+        const hh = userMemory.history[q.id];
+        if (hh && (hh.c || hh.w) && (hh.due || hh.w > 0)) dueTimes.push(hh.due ? Math.max(hh.due, 0) : now);
         const g = q.genre || 'その他';
         const G = gmap[g] = gmap[g] || { genre: g, total: 0, seen: 0, known: 0, wrong: 0 };
         G.total++;
@@ -2772,7 +2721,7 @@
       const lastMock = recent.length ? recent[recent.length - 1].score.rate / 100 : null;
       if (lastMock != null) rate = rate * 0.5 + lastMock * 0.5;
       const openMis = Object.values(userMemory.mistakes || {}).filter(m => m.subject === key && !m.cleared).length;
-      res.push({ key, genres, rate, lastMock, openMis, seen: genres.reduce((a, G) => a + G.seen, 0), total: qs.length });
+      res.push({ key, genres, rate, lastMock, openMis, dueTimes, seen: genres.reduce((a, G) => a + G.seen, 0), total: qs.length });
     }
     return res;
   }
@@ -2781,78 +2730,6 @@
     return (userMemory.mockExams || []).some(m => m.subject === subject && localDate(+String(m.id).replace(/\D/g, '') || 0) === date);
   }
 
-  // 計画を作る。today〜試験日の前日までの各日に、作業（tasks）を割り当てる
-  function buildPlan(an, cfg, today) {
-    const left = dayDiff(today, cfg.examDate);
-    const days = [];
-    for (let i = 0; i < left; i++) {
-      const date = addDays(today, i);
-      const budget = isWeekendDate(date) ? cfg.weekend : cfg.weekday;
-      days.push({ date, budget, left: budget, tasks: [] });
-    }
-    if (!days.length) return days;
-    const add = (day, t) => { t.id = `${day.date}|${t.kind}|${t.subject || ''}|${t.genre || ''}`; day.tasks.push(t); day.left -= t.minutes; };
-    const last = days[days.length - 1];
-    const subjects = an.slice().sort((a, b) => a.rate - b.rate);   // 推定の低い科目から
-
-    // 1) 前日: 間違えた問題の総復習と、まとめノートの見直し（軽め）
-    if (days.length >= 2) {
-      const half = Math.max(30, Math.round(last.budget / 2 / 10) * 10);
-      add(last, { kind: 'mistakes', subject: '', minutes: half, title: '間違えた問題の総仕上げ（全科目）', note: '新しい問題より、間違えた問題・ブックマークを確実に' });
-      add(last, { kind: 'notes', subject: subjects[0] ? subjects[0].key : 'senmon', minutes: Math.max(20, last.budget - half), title: 'まとめノート・学習ガイドで直前チェック', note: '数値・法令・用語を見直し、早めに寝る' });
-    }
-    // 2) 腕試し: 最後の1週間に各科目1回。日数に余裕があり、最近の腕試しがない科目は、最初の数日に実力確認として1回
-    // 時間が足りる日（多くは土日）を優先。期間内に無ければ前後に広げ、それでも無ければ一番長く取れる日に置く
-    const placeMock = (sub, from, to, why) => {
-      const need = PLAN_MOCK_MIN[sub.key] + 30;
-      const free = d => d !== last && !d.tasks.some(t => t.kind === 'mock');
-      const inRange = days.slice(Math.max(0, from), Math.max(0, to) + 1).filter(free);
-      let fit = inRange.filter(d => d.left >= need);
-      if (!fit.length) fit = days.slice(Math.max(0, from - 3), Math.max(0, to) + 1).filter(d => free(d) && d.left >= need);
-      const pickFrom = fit.length ? fit : (inRange.length ? inRange : days.filter(free));
-      if (!pickFrom.length) return;
-      const day = pickFrom.reduce((a, b) => (b.left > a.left ? b : a));
-      add(day, { kind: 'mock', subject: sub.key, minutes: need, title: `${SUBJECTS[sub.key].short}科目の腕試し（本番形式・${PLAN_MOCK_MIN[sub.key]}分）＋見直し`, note: why + (day.left < 0 ? '　※この日は時間を多めに確保してください' : '') });
-    };
-    const n = days.length;
-    const bySize = subjects.slice().sort((a, b) => PLAN_MOCK_MIN[b.key] - PLAN_MOCK_MIN[a.key]);   // 長い試験から、時間の取れる日を確保
-    // 本番前の1週間に各科目1回
-    bySize.forEach(sub => placeMock(sub, n - 7, n - 2, '本番の時間配分に慣れる'));
-    // 日数に余裕があり、最近（14日以内）腕試しをしていない科目は、前半に実力確認として1回
-    if (n >= 9) bySize.forEach(sub => { if (sub.lastMock == null) placeMock(sub, 0, n - 8, '今の実力を確かめ、弱点を見つける'); });
-
-    // 3) 間違えた問題の復習: 毎日15分（未克服がある科目）
-    days.forEach(d => {
-      if (d === last) return;
-      const sub = subjects.filter(x => x.openMis > 0).sort((a, b) => b.openMis - a.openMis)[0];
-      if (sub && d.left >= 30) add(d, { kind: 'mistakes', subject: sub.key, minutes: 15, title: `${SUBJECTS[sub.key].short}：間違えた問題の復習`, note: `未克服 ${sub.openMis}問。2回連続正解で克服` });
-    });
-
-    // 4) 残りの時間: 弱い分野の過去問演習を30分単位で配る（出題数が多く、到達度が低い分野ほど多く）
-    const target = 0.65;   // 合格ライン50%に余裕を持たせた目標
-    const pool = [];
-    subjects.forEach(sub => sub.genres.forEach(G => {
-      const subW = 1 + Math.max(0, target - sub.rate) * 3;
-      pool.push({ sub, G, w: G.exam * (1 - G.score) * subW * (1 + 0.5 * (1 - G.coverage)), alloc: 0, cap: Math.ceil((G.total - G.known) * MIN_PER_Q / 30) + 1 });
-    }));
-    days.forEach(d => {
-      if (d === last) return;
-      let guard = 0;
-      while (d.left >= 20 && guard++ < 20) {
-        const usedToday = g => d.tasks.filter(t => t.kind === 'practice' && t.subject === g.sub.key && t.genre === g.G.genre).reduce((a, t) => a + t.minutes, 0);
-        const cand = pool.filter(g => g.alloc < g.cap && usedToday(g) < 60);
-        if (!cand.length) break;
-        const g = cand.reduce((a, b) => (b.w / (1 + b.alloc * 0.7) > a.w / (1 + a.alloc * 0.7) ? b : a));
-        const m = Math.min(30, d.left);
-        const ex = d.tasks.find(t => t.kind === 'practice' && t.subject === g.sub.key && t.genre === g.G.genre);
-        if (ex) { ex.minutes += m; ex.n = Math.round(ex.minutes / MIN_PER_Q); d.left -= m; }
-        else add(d, { kind: 'practice', subject: g.sub.key, genre: g.G.genre, minutes: m, n: Math.round(m / MIN_PER_Q), title: `${SUBJECTS[g.sub.key].short}：${g.G.genre}`, note: `到達度 ${Math.round(g.G.score * 100)}%・本試験で約${g.G.exam}問` });
-        g.alloc++;
-      }
-    });
-    days.forEach(d => d.tasks.forEach(t => { if (t.kind === 'practice') t.note = `${t.n}問（間違えた・未回答の問題から）・${t.note}`; }));
-    return days;
-  }
 
   // 作業の進み具合（自動判定）。過去問演習: 今日その分野で解いた数。腕試し: 今日その科目を受けたか
   function taskProgress(t, date) {
@@ -2864,6 +2741,11 @@
       return { done: n >= t.n, text: `${Math.min(n, t.n)}/${t.n}問` };
     }
     if (t.kind === 'mock') return { done: mockDoneOn(t.subject, date), text: mockDoneOn(t.subject, date) ? '受験済み' : '' };
+    if (t.kind === 'review') {
+      const e = (userMemory.daily || {})[date];
+      const n = e && e.r ? (e.r[t.subject] || 0) : 0;
+      return { done: n >= t.n, text: `${Math.min(n, t.n)}/${t.n}問` };
+    }
     return { done: false, text: '' };
   }
 
@@ -2962,6 +2844,13 @@
       const rank = q => { const h = userMemory.history[q.id]; return !h || (!h.c && !h.w) ? 1 : h.w > 0 ? 0 : h.c === 1 ? 2 : 3; };
       const list = shuffleArray(pool.slice()).sort((a, b) => rank(a) - rank(b)).slice(0, t.n);
       if (!list.length) { showToast('この分野の問題がありません'); return; }
+      startQuizWith(list);
+    } else if (t.kind === 'review') {
+      // 復習の時期が来た問題を、時期の早い順（間違えたままの問題が先）に
+      const lim = endOfDay(localDate());
+      const list = allQuestions.filter(q => hasAnswerOf(q) && srsIsDue(userMemory.history[q.id], lim))
+        .sort((a, b) => (userMemory.history[a.id].due || 0) - (userMemory.history[b.id].due || 0)).slice(0, t.n);
+      if (!list.length) { showToast('今日の復習はありません'); return; }
       startQuizWith(list);
     } else if (t.kind === 'mock') openMockSetup();
     else if (t.kind === 'mistakes') openMistakes(t.subject || currentSubject);
@@ -3555,32 +3444,11 @@
   // --- 同じような問題が続かないようにする仕組み ---
   const MOCK_SEEN_MAX_IDS = 400;      // 記憶する過去問の数（専門なら約11回分）
   const MOCK_SEEN_MAX_THEMES = 150;   // 記憶するAIテーマの数
-  const SIMILAR_THRESHOLD = 0.28;     // 文章の似かた（2文字の並びの一致率）。同じテーマの過去問どうしは約0.57、別テーマは0.14以下
 
-  function weightedPick(items, weights) {
-    const total = weights.reduce((a, b) => a + b, 0);
-    if (!(total > 0)) return items[Math.floor(Math.random() * items.length)];
-    let r = Math.random() * total;
-    for (let i = 0; i < items.length; i++) { r -= weights[i]; if (r <= 0) return items[i]; }
-    return items[items.length - 1];
-  }
 
-  // 問題文＋選択肢を2文字ずつに区切った集合（文章の似かたの比較用）
-  function bigramsOf(text) {
-    const t = String(text).replace(/[\s\u3000，。、．・「」（）()：:；;\-－]/g, '');
-    const set = new Set();
-    for (let i = 0; i < t.length - 1; i++) set.add(t.slice(i, i + 2));
-    return set;
-  }
   function questionBigrams(q) {
     if (!q._bg) q._bg = bigramsOf(q.question + (q.options || []).join(''));
     return q._bg;
-  }
-  function jaccard(a, b) {
-    if (a.size === 0 || b.size === 0) return 0;
-    let inter = 0;
-    a.forEach(x => { if (b.has(x)) inter++; });
-    return inter / (a.size + b.size - inter);
   }
 
   // --- AIが過去に出した問題の記録（重複を避けるため。腕試し・網羅特訓の全体で共有） ---
@@ -3614,7 +3482,7 @@
   function isRepeatOfHistory(q, sub, extra) {
     const bs = bigramsOf(qHistText(q));
     const br = q.reason && String(q.reason).length >= 8 ? bigramsOf(String(q.reason)) : null;
-    const hit = h => jaccard(bs, h.s) >= 0.4 || (br && h.r && jaccard(br, h.r) >= 0.6);
+    const hit = h => jaccard(bs, h.s) >= HIST_TEXT_THRESHOLD || (br && h.r && jaccard(br, h.r) >= HIST_REASON_THRESHOLD);
     return aiHistBgs(sub).some(hit) || (extra || []).some(hit);
   }
   // プロンプトに添える「すでに出した問題（同じ知識を問わない）」の一覧。直近のものと、ランダムな過去のもの
@@ -3635,8 +3503,6 @@
     if (el) el.textContent = Object.values(aiHistOf('senmon') ? aiHist : {}).reduce((t, l) => t + l.length, 0);
   }
 
-  // AIの問題が、過去問とほぼ同じ（流用）でないかを確かめる
-  const COPY_THRESHOLD = 0.5;
   const pastBigramCache = {};
   function pastBigramsOf(subject) {
     const qs = subjectCache[subject] || (subject === currentSubject ? allQuestions : []);
@@ -4029,6 +3895,7 @@
 
   // Geminiの呼び出し。思考を浅くして速くする（対応していないモデルなら自動で外して再送する）
   let geminiThinkingOk = true;
+  let geminiSchemaOk = true;   // 応答の形式の指定（構造化出力）が使えるか。400で断られたら外して送り直す
   // 使うAIモデル。常に軽量(Lite)モデルを使う（速く、利用制限にも当たりにくい）。標準モデルへ切り替える場合は、ここを 'gemini-3.5-flash' に変える
   const AI_MODEL = 'gemini-3.5-flash-lite';
   const AI_ALWAYS_LITE = AI_MODEL.endsWith('-lite');   // すでに軽量なので、混雑時に軽量モデルへ切り替える処理は不要
@@ -4149,16 +4016,6 @@
     saveGenLogs([]); localStorage.removeItem(GEN_LOG_KEY); showGenLogs();
   };
 
-  // ログ用に、APIのエラー（どの利用上限に当たったか・待つよう指定された時間）を短くまとめる
-  function apiErrSummary(data) {
-    const e = (data && data.error) || {};
-    const parts = [];
-    (e.details || []).forEach(d => {
-      (d.violations || []).forEach(x => { const id = x.quotaId || x.quotaMetric; if (id) parts.push(id.replace(/^.*\//, '') + (x.quotaValue ? `（上限${x.quotaValue}）` : '')); });
-      if (d.retryDelay) parts.push(`再試行まで${d.retryDelay}`);
-    });
-    return parts.length ? parts.join(' / ') : String(e.message || '').slice(0, 120);
-  }
 
   // ログ用に、呼び出しの種類（作問・品質チェックなど）と入力の長さを調べる
   function genLogInfo(payload) {
@@ -4174,6 +4031,7 @@
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     const send = async (think) => {
       const body = JSON.parse(JSON.stringify(payload));
+      if (!geminiSchemaOk && body.generationConfig) delete body.generationConfig.responseSchema;   // 形式の指定が使えない場合は外す
       if (think) body.generationConfig = Object.assign({}, body.generationConfig, { thinkingConfig: { thinkingLevel: 'low' } });
       // 呼び出し元の中止（signal）と、時間切れの両方で止められるようにする
       const ctl = new AbortController();
@@ -4213,6 +4071,10 @@
     }
     if (r.res.status === 429) aiProbe.need = true;
     else if (r.res.ok) aiProbe.need = false;
+    if (!r.res.ok && r.res.status === 400 && geminiSchemaOk && payload.generationConfig && payload.generationConfig.responseSchema && /schema/i.test(JSON.stringify(r.data && r.data.error || {}))) {
+      geminiSchemaOk = false;
+      r = await send(geminiThinkingOk);
+    }
     if (!r.res.ok && r.res.status === 400 && geminiThinkingOk && /think/i.test(JSON.stringify(r.data && r.data.error || {}))) {
       geminiThinkingOk = false;
       r = await send(false);
@@ -4238,11 +4100,11 @@
 {"results": [{"no": 1, "verdicts": ["正","誤","正","正","正"], "answer": 2, "flaw": ""}]}
 
 ${body}`;
-    const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { response_mime_type: 'application/json' } };
+    const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: jsonConfig(SCHEMA_VERDICTS) };
     const { res, data } = await geminiPost(AI_MODEL, apiKey, payload, signal);
     if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
     const txt = aiText(data) || '';
-    const obj = JSON.parse(repairJsonEscapes(txt.replace(/^```(?:json)?\s*|\s*```$/g, '')));
+    const obj = parseAiJson(txt);
     return Array.isArray(obj.results) ? obj.results : (Array.isArray(obj) ? obj : []);
   }
   // list: normalizeAiQuestion の結果（または同じ形の問題）の配列。品質チェックを通った問題だけを返す。チェック自体に失敗したときは、そのまま通す
@@ -4298,7 +4160,7 @@ ${body}`;
 {"explanations": [{"no": 1, "text": "解説"}]}
 
 ${body}`;
-    const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { response_mime_type: 'application/json' } };
+    const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: jsonConfig(SCHEMA_EXPLANATIONS) };
     for (let attempt = 0; attempt < 3; attempt++) {
       await waitAiPause(null);
       const { res, data } = await geminiPost(AI_MODEL, apiKey, payload);
@@ -4310,7 +4172,7 @@ ${body}`;
       }
       if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
       const txt = aiText(data) || '';
-      const obj = JSON.parse(repairJsonEscapes(txt.replace(/^```(?:json)?\s*|\s*```$/g, '')));
+      const obj = parseAiJson(txt);
       return Array.isArray(obj.explanations) ? obj.explanations : (Array.isArray(obj) ? obj : []);
     }
     throw new Error('混雑のため解説を作れませんでした');
@@ -4382,24 +4244,8 @@ ${body}`;
 ・数式・数値・単位つきの式は、選択肢の中も含めて、必ず $...$ で囲んだLaTeXで書くこと（例: $35.4\\,\\%$）。$ で囲まずに \\text{ } や \\frac{ } だけを書かないこと。
 ・単位の角括弧は [%] のように普通の文字で書き、\\[ \\] は数式の表示以外に使わないこと。`;
 
-  // --- AI生成の中止 ---
-  class AiCancelled extends Error { constructor() { super('cancelled'); this.name = 'AiCancelled'; } }
-  // AIが答えたが、使える問題が1つもなかった（通信や認証のエラーとは区別する）
-  class AiNoUsable extends Error { constructor(msg) { super(msg); this.name = 'AiNoUsable'; } }
-  // APIが混雑・利用制限（429/503）で、待っても応答が得られなかった
-  class AiBusy extends Error { constructor(msg, waitMs) { super(msg); this.name = 'AiBusy'; this.waitMs = waitMs || 0; } }
   // 利用制限（429）を受けたら、全ての生成をその時間だけ一斉に止める（個別に再送して制限を叩き続けない）
   let aiPauseUntil = 0;
-  function retryDelayMs(res, data) {
-    let ms = 0;
-    try {
-      const details = (data && data.error && data.error.details) || [];
-      const ri = details.find(d => d && d.retryDelay);
-      if (ri) ms = parseFloat(String(ri.retryDelay)) * 1000;
-    } catch (e) {}
-    if (!(ms > 0)) ms = res.status === 429 ? 12000 : 4000;
-    return Math.min(65000, ms + 500);
-  }
   async function waitAiPause(job) {
     const ms = aiPauseUntil - Date.now();
     if (ms > 0) { await aiSleep(job, ms); throwIfCancelled(job); }
@@ -4461,119 +4307,8 @@ ${body}`;
     else { hideAiLoading(); goToStart(); }
   };
 
-  // --- AIの応答の検証・整形 ---
-  // JSON本文を取り出す（```json で囲まれていても、前後に説明文があっても読めるようにする）
-  // 応答の本文。複数のパートに分かれて返ることがあるので、思考（thought）以外をつなげる
-  function aiText(data) {
-    const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
-    return parts.filter(p => !p.thought && typeof p.text === 'string').map(p => p.text).join('');
-  }
-  // AIがJSONの中にLaTeXをそのまま書くと（"\mathrm" "\times" など）、JSONとして読めない・\t がタブに化ける。
-  // 文字列中のバックスラッシュを、JSONのエスケープとして正しいもの以外は「\\」に直す
-  function repairJsonEscapes(t) {
-    return t.replace(/\\([\s\S])/g, (m, c, off, str) => {
-      if (c === '\\' || c === '"' || c === '/') return m;
-      if ('bfnrt'.includes(c)) return /[a-zA-Z]/.test(str[off + 2] || '') ? '\\\\' + c : m;   // \times \frac \beta \nu \rho など
-      if (c === 'u') return /^[0-9a-fA-F]{4}/.test(str.slice(off + 2, off + 6)) ? m : '\\\\u';
-      return '\\\\' + c;
-    });
-  }
-  function extractAiQuestionList(text) {
-    let t = String(text ?? '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-    const a = t.indexOf('{'), a2 = t.indexOf('['), b = Math.max(t.lastIndexOf('}'), t.lastIndexOf(']'));
-    const start = a < 0 ? a2 : a2 < 0 ? a : Math.min(a, a2);
-    if (start < 0 || b <= start) throw new AiNoUsable("AIの応答を読み取れませんでした（JSONがない）");
-    t = repairJsonEscapes(t.slice(start, b + 1));
-    let parsed;
-    try { parsed = JSON.parse(t); }
-    catch (e) {
-      // 途中で切れている場合は、最後に完結している問題までを読む
-      const cut = t.lastIndexOf('},');
-      try { parsed = JSON.parse(t.slice(0, cut + 1) + ']}'); }
-      catch (e2) { throw new AiNoUsable(`AIの応答を読み取れませんでした（${String(e.message).slice(0, 60)}）`); }
-    }
-    let list = Array.isArray(parsed) ? parsed : parsed && parsed.questions;
-    // "questions" 以外の名前で返ってきた場合も、問題の配列を探して使う
-    if (!Array.isArray(list) && parsed && typeof parsed === 'object') list = Object.values(parsed).find(v => Array.isArray(v) && v.length && typeof v[0] === 'object');
-    if (!Array.isArray(list) || list.length === 0) throw new AiNoUsable("AIの応答に問題が含まれていませんでした");
-    return list;
-  }
 
-  // 選択肢の先頭の番号（①、1. 、(1) など）を取り除く。「1.5 m」のような数値は消さない
-  function stripOptionNumber(str) {
-    return String(str ?? '').trim()
-      .replace(/^[①-⑤]\s*/, '')
-      .replace(/^[（(]?[1-5１-５][)）.．、:：]\s+/, '')
-      .replace(/^選択肢\s*[1-5１-５]\s*[:：.．]\s*/, '')
-      .trim();
-  }
-  const normOptionKey = str => String(str).replace(/[\s\u3000]/g, '').toLowerCase();
 
-  // 1問分を検証して整える。使えない場合は { ok: false, error } を返す
-  // 正答は「正解の選択肢の文章（correct_option）」を最優先にして特定し、番号（answer: 0〜4）はその次に使う（番号のずれによる誤採点を防ぐ）
-  // 問題文の「…ものはどれか」から、不適切を選ぶ(neg)か適切を選ぶ(pos)かを判定する（組合せ・計算・大小比較などはnull）
-  function stemKind(question) {
-    const sent = (String(question).split(/(?<=[。？?])/).find(x => /どれか|選べ|はどれ/.test(x))) || '';
-    if (!sent || /組合せ|組み合わせ|組合わせ|[（(][ア-エａ-ｄa-d][）)]|空欄|数値|計算|いくつ|何個|個数|最も大きい|最も小さい|大きい順|小さい順|順に|大小|値は|値を|式は|式を|最も近い/.test(sent)) return null;
-    if (/不適切|不適当|誤っ|誤り|適切でな|適当でな|正しくな|間違っ|異なる|あてはまらな|当てはまらな|含まれない|該当しない|ふさわしくな/.test(sent)) return 'neg';
-    if (/適切な|適当な|正しい|正しく|あてはまる|当てはまる|該当する|含まれる|ふさわしい/.test(sent)) return 'pos';
-    return null;
-  }
-  function normalizeAiQuestion(raw) {
-    if (!raw || typeof raw !== 'object') return { ok: false, error: '形式が不正' };
-    const question = String(raw.question ?? '').trim();
-    if (question.length < 8) return { ok: false, error: '問題文がない・短すぎる' };
-    if (!Array.isArray(raw.options)) return { ok: false, error: '選択肢がない' };
-    const options = raw.options.map(stripOptionNumber);
-    if (options.length !== 5 || options.some(o => o === '')) return { ok: false, error: `選択肢が5つではない（${options.length}）` };
-    if (new Set(options.map(normOptionKey)).size !== 5) return { ok: false, error: '同じ選択肢がある' };
-
-    let idx = -1;
-    const co = raw.correct_option ?? raw.correctOption;
-    if (co != null && String(co).trim() !== '') {
-      const key = normOptionKey(stripOptionNumber(co));
-      const hits = options.map((o, i) => normOptionKey(o) === key ? i : -1).filter(i => i >= 0);
-      if (hits.length === 1) idx = hits[0];
-    }
-    if (idx < 0) {
-      let a = raw.answer;
-      if (typeof a === 'string') {
-        const t = a.trim().replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
-        if (/^[①-⑤]$/.test(t)) a = t.charCodeAt(0) - 0x2460;                 // ①〜⑤ は番号（1始まり）の表記
-        else if (/^(?:選択肢)?\s*[1-5]\s*(?:番)?$/.test(t) && /[選番]/.test(t)) a = parseInt(t.replace(/\D/g, ''), 10) - 1;
-        else if (/^[0-9]+$/.test(t)) a = parseInt(t, 10);                      // 数字だけの文字列は、指示どおり0始まり
-      }
-      if (Number.isInteger(a) && a >= 0 && a <= 4) idx = a;
-    }
-    if (idx < 0) return { ok: false, error: '正答を特定できない' };
-
-    // 「不適切（適切）なものを選ぶ」問題で、誤り（正しい）選択肢が2つ以上ある矛盾を弾く
-    const kind = stemKind(question);
-    const jr = raw.judgements ?? raw.judgments;
-    if (kind && Array.isArray(jr) && jr.length === 5) {
-      const j = jr.map(x => /^\s*(誤|×|✕|false|不適切|incorrect)/i.test(String(x)) ? '誤' : /^\s*(正|○|〇|true|適切|correct)/i.test(String(x)) ? '正' : '?');
-      if (!j.includes('?')) {
-        const wrong = j.filter(x => x === '誤').length;
-        if (kind === 'neg') {
-          if (wrong !== 1) return { ok: false, error: `誤りの選択肢が${wrong}つある（1つのはず）` };
-          if (j[idx] !== '誤') return { ok: false, error: '正答の選択肢が「誤り」と判定されていない（矛盾）' };
-        } else {
-          if (5 - wrong !== 1) return { ok: false, error: `正しい選択肢が${5 - wrong}つある（1つのはず）` };
-          if (j[idx] !== '正') return { ok: false, error: '正答の選択肢が「正しい」と判定されていない（矛盾）' };
-        }
-      }
-    }
-    return {
-      ok: true,
-      question: fixMathText(question),
-      options: options.map(fixMathText),
-      answer: idx,
-      explanation: fixMathText(String(raw.explanation ?? raw.reason ?? '').trim()) || '（解説なし）',
-      reason: String(raw.reason ?? '').trim().slice(0, 80),
-      needExp: !String(raw.explanation ?? '').trim(),   // 詳しい解説は、問題を解いている間に別のAI呼び出しで作る
-      theme: String(raw.theme ?? '').trim()
-    };
-  }
 
   // AIで作る問題の構成。source: 'aiall'=すべてAI / 'ai'=AI＋過去問
   // 専門は従来どおり。基礎・適性は、過去問1回あたりの分野別の出題数に合わせる（群・分野ごとにAIで作る）
@@ -4863,7 +4598,7 @@ ${body}`;
           if (isSimilarToAny(bg, examBigrams) || isSimilarToAny(bg, seenBg)) continue;
           // 同じ回の中で、正解の根拠（問うている知識）が同じ問題も除く
           const rb = c.q.reason && c.q.reason.length >= 8 ? bigramsOf(c.q.reason) : null;
-          if (rb && (examReasons.some(o => jaccard(rb, o) >= 0.45) || seenEx.some(o => jaccard(rb, o) >= 0.45))) continue;
+          if (rb && (examReasons.some(o => jaccard(rb, o) >= REASON_THRESHOLD) || seenEx.some(o => jaccard(rb, o) >= REASON_THRESHOLD))) continue;
           seenBg.push(bg); c.bg = bg; c.rb = rb; if (rb) seenEx.push(rb); uniq.push(c);
         }
 
@@ -4935,7 +4670,7 @@ ${AI_JSON_FORMAT}
 問題文や選択肢は、過去問と全く同じにならないよう工夫してください。
 ※重要：問題文、選択肢、解説にはMarkdown記法（見出し、太字など）を使い、数式が含まれる場合は必ずLaTeX記法（インラインは $...$ 、ブロックは $$...$$）を使用してください。${getTrendPrompt(genre)}${seedPrompt}${recentPrompt}${avoidPrompt}`;
 
-    const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { response_mime_type: "application/json" } };
+    const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: jsonConfig(SCHEMA_QUESTIONS) };
     
     let retries = 2;
     let busyTries = 0;
@@ -5200,12 +4935,11 @@ ${AI_JSON_FORMAT}
   // 模擬試験で解いた過去問を学習記録にも反映する（AI問題は除く）
   function recordLearning(q, selectedIdx) {
     if (!allQuestions.some(aq => aq.id === q.id) || !hasAnswerOf(q)) return;
-    if (!userMemory.history[q.id]) userMemory.history[q.id] = { c: 0, w: 0 };
     const isCorrect = isCorrectAnswer(q, selectedIdx);
-    if (isCorrect) { userMemory.history[q.id].c++; userMemory.history[q.id].w = 0; }
-    else userMemory.history[q.id].w++;
+    const wasDue = srsIsDue(userMemory.history[q.id], endOfDay(localDate()));
+    userMemory.history[q.id] = srsUpdate(userMemory.history[q.id], isCorrect);   // 次に復習する日も決める
     recordMistake(q, isCorrect, selectedIdx);
-    bumpStats(isCorrect, q);
+    bumpStats(isCorrect, q, wasDue);
   }
 
   window.submitMockExam = function(force = false) {
@@ -5572,9 +5306,7 @@ ${AI_JSON_FORMAT}`;
 
     const payload = {
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-          response_mime_type: "application/json"
-      }
+      generationConfig: jsonConfig(SCHEMA_QUESTIONS)
     };
 
     let response, result;
@@ -5839,20 +5571,12 @@ ${AI_JSON_FORMAT}`;
     sessionAnswers[q.id] = selectedIdx; 
     
     if (!isAiMode && !isAiQuestion(q) && hasAnswerOf(q)) { 
-      if (!userMemory.history[q.id]) {
-        userMemory.history[q.id] = { c: 0, w: 0 };
-      }
-      
       const isCorrect = isCorrectAnswer(q, selectedIdx);
-      if (isCorrect) {
-          userMemory.history[q.id].c++;
-          userMemory.history[q.id].w = 0; 
-      } else {
-          userMemory.history[q.id].w++;
-      }
-      
+      const wasDue = srsIsDue(userMemory.history[q.id], endOfDay(localDate()));
+      userMemory.history[q.id] = srsUpdate(userMemory.history[q.id], isCorrect);   // 次に復習する日も決める（正解するたびに間隔を広げる）
+
       recordMistake(q, isCorrect, selectedIdx);
-      bumpStats(isCorrect, q);
+      bumpStats(isCorrect, q, wasDue);
       // ブックマークした問題の復習状況を自動で更新（間違い→復習中、2回連続正解→克服済み）
       const bm = userMemory.bookmarks && userMemory.bookmarks[q.id];
       if (bm) {
@@ -5877,16 +5601,6 @@ ${AI_JSON_FORMAT}`;
     }
   }
 
-  // AI詳細解説を生成する（混雑時は軽量モデルに切り替え）
-  // APIのエラーを、利用者向けの分かりやすい文にする
-  function friendlyApiError(status, data) {
-    const detail = apiErrSummary(data);
-    if (status === 429 && /PerDay/i.test(detail)) return '今日のGemini APIの利用上限（無料枠）に達しました。日本時間の16〜17時ごろに回復します。';
-    if (status === 429) return 'Gemini APIの利用制限（1分あたりの回数）に達しました。1分ほど待ってから、もう一度お試しください。';
-    if (status === 503 || status === 500) return 'Geminiが混雑しています（一時的なものです）。少し時間をおいて、もう一度お試しください。';
-    if (status === 400 || status === 403) return `APIキーかリクエストに問題があります（${status}）。設定のAPIキーを確認してください。`;
-    return `[${status}] ${(data && data.error && data.error.message) || '通信エラー'}`;
-  }
 
   // onStatus(msg): 混雑で待っている間の状況を知らせる
   async function fetchAIExplanation(q, useLiteModel = false, onStatus = null) {

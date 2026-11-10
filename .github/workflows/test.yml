@@ -1,0 +1,16 @@
+name: test
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 自動テスト（js/core.js）
+        run: node --test tests/*.test.js
+      - name: sw.js の CACHE_NAME が最新か
+        run: python3 tools/stamp_sw.py --check
