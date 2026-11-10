@@ -1074,7 +1074,7 @@
       <button class="subject-tab" data-key="tekisei" onclick="setMistakeSubject('tekisei')">適性</button>
     </div>
     <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5;">
-      過去問演習・腕試しで間違えた問題が自動で入ります。<b>その後2回連続で正解すると「克服済み」</b>になります。間違えるたびに回数が増えます。
+      過去問演習・腕試しで間違えた問題が自動で入ります。<b>その後1回正解すると、自動で「克服済み」</b>になります（また間違えると未克服に戻ります）。間違えるたびに回数が増えます。
     </div>
     <div class="chips" id="mis-status-chips" style="margin-bottom: 8px;">
       <button class="chip" data-st="open" onclick="setMisFilter('open')">未克服</button>
@@ -1238,7 +1238,7 @@
     statsBy: {},
     history: {},
     mockExams: [],
-    mistakes: {},      // 間違えた問題: 問題ID → { subject, n(間違えた回数), t(最後に間違えた時刻), streak(その後の連続正解), cleared(克服済み), pick(最後に選んだ番号) }
+    mistakes: {},      // 間違えた問題: 問題ID → { subject, n(間違えた回数), t(最後に間違えた時刻), streak(その後の正解数), cleared(克服済み), pick(最後に選んだ番号) }
     bookmarks: {},     // ブックマーク: 問題ID → { subject, t, date, snap(AI生成問題だけ問題の内容を保存) }
     mockSeen: {},      // 科目ごとの、直近の腕試しで出た過去問のID（次回は出にくくする）
     mockThemes: {},    // 科目ごとの、直近の腕試しでAIが扱ったテーマ（次回は避ける）
@@ -1252,7 +1252,7 @@
   }
 
   function subjectOfId(id) { return String(id).startsWith('kiso:') ? 'kiso' : String(id).startsWith('tekisei:') ? 'tekisei' : 'senmon'; }
-  // 間違えた問題リストの更新（間違い→未克服に追加、その後2回連続で正解→克服済み）
+  // 間違えた問題リストの更新（間違い→未克服に追加、その後1回正解したら→克服済み）
   function recordMistake(q, isCorrect, pickIdx) {
     if (!q || isAiQuestion(q)) return;
     userMemory.mistakes = userMemory.mistakes || {};
@@ -1263,7 +1263,8 @@
       scheduleNotionSync();
     } else if (m && !m.cleared) {
       m.streak = (m.streak || 0) + 1;
-      if (m.streak >= 2) { m.cleared = true; showToast('🎉 間違えた問題を克服しました'); }
+      m.cleared = true;
+      showToast('🎉 間違えた問題を克服しました');
       scheduleNotionSync();
     }
   }
@@ -2952,13 +2953,13 @@
       const correct = correctIndexes(q);
       const opts = q.options.map((o, i) => `<div class="bm-opt ${correct.includes(i) ? 'correct' : ''}" ${i === m.pick && !correct.includes(i) ? 'style="border-color:var(--danger-text);color:var(--danger-text);"' : ''}>${optionHtml(q, i, o)}${i === m.pick && !correct.includes(i) ? ' 　← あなたの回答' : ''}</div>`).join('');
       const img = q.imageUrl ? `<div style="text-align:center; margin: 8px 0;"><a href="${q.imageUrl}" target="_blank" rel="noopener"><img loading="lazy" src="${q.imageUrl}" alt="問題の原本画像" class="question-image" style="margin-bottom:0;" onerror="this.parentElement.style.display='none';"></a></div>` : '';
-      const prog = m.cleared ? '✅ 克服済み' : `連続正解 ${m.streak || 0}/2`;
+      const prog = m.cleared ? '✅ 克服済み' : '未克服（次に正解したら克服）';
       card.innerHTML = `<div class="bm-head"><span>${escapeHtml(meta)}<br><span style="font-weight:normal;">間違えた回数 <b style="color:var(--danger-text);">${m.n}</b> 回 ／ 最後: ${escapeHtml(misDate(m))} ／ ${prog}</span></span><span style="display:flex;align-items:center;gap:6px;"><button class="bookmark-btn ${isBookmarked(id) ? 'on' : ''}" title="ブックマーク">${isBookmarked(id) ? '★' : '☆'}</button></span></div>
         <div class="bm-q md-content">${richText(q, q.question)}</div>
         <details><summary>答えと解説を見る</summary>${img}${opts}<div style="margin: 8px 0; font-weight: bold; font-size: 0.9rem;">正解: ${escapeHtml(correctLabel(q))}</div><div class="md-content">${DOMPurify.sanitize(markedWithMath(String(q.explanation || '')))}</div></details>
         <div style="display:flex;gap:8px;margin-top:8px;"><button class="chip mis-toggle">${m.cleared ? '未克服に戻す' : '克服済みにする'}</button><button class="chip mis-del">リストから外す</button></div>`;
       card.querySelector('.bookmark-btn').onclick = () => { toggleBookmark(q); renderMistakes(); updateBookmarkOpenButton(); };
-      card.querySelector('.mis-toggle').onclick = () => { m.cleared = !m.cleared; m.streak = m.cleared ? 2 : 0; saveUserData(); scheduleNotionSync(); updateMistakeOpenButton(); renderMistakes(); };
+      card.querySelector('.mis-toggle').onclick = () => { m.cleared = !m.cleared; m.streak = m.cleared ? 1 : 0; saveUserData(); scheduleNotionSync(); updateMistakeOpenButton(); renderMistakes(); };
       card.querySelector('.mis-del').onclick = () => { delete userMemory.mistakes[id]; noteMistakeRemoved(id); saveUserData(); updateMistakeOpenButton(); renderMistakes(); };
       listEl.appendChild(card);
     });
