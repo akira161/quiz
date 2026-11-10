@@ -321,6 +321,28 @@
     .chip { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 999px; padding: 8px 12px; font-size: 0.85rem; cursor: pointer; font-weight: 600; min-height: 38px; }
     .chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
     .chip:disabled { opacity: 0.45; cursor: not-allowed; }
+    .plan-banner { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid rgba(79,70,229,0.35); background: linear-gradient(135deg, rgba(79,70,229,0.10), rgba(168,85,247,0.10)); color: var(--text); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; font: inherit; cursor: pointer; text-align: left; }
+    .plan-banner b { font-size: 1rem; }
+    .plan-banner span { font-size: 0.82rem; color: var(--text-muted); }
+    .plan-count { text-align: center; padding: 14px; border-radius: 12px; background: linear-gradient(135deg, #4f46e5, #a855f7); color: #fff; margin-bottom: 14px; }
+    .plan-count b { font-size: 2rem; display: block; line-height: 1.2; }
+    .plan-sec { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; background: var(--card); }
+    .plan-sec h3 { margin: 0 0 8px; font-size: 1rem; }
+    .plan-task { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px dashed var(--border); }
+    .plan-task:first-of-type { border-top: none; }
+    .plan-task input[type=checkbox] { width: 22px; height: 22px; flex: 0 0 22px; accent-color: #4f46e5; }
+    .plan-task .pt-body { flex: 1; min-width: 0; }
+    .plan-task .pt-title { font-weight: bold; font-size: 0.92rem; }
+    .plan-task .pt-sub { font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; }
+    .plan-task.done .pt-title { text-decoration: line-through; opacity: 0.6; }
+    .plan-task button { flex: 0 0 auto; border: none; border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 0.82rem; font-weight: bold; background: #4f46e5; color: #fff; cursor: pointer; }
+    .plan-day { border-top: 1px solid var(--border); padding: 8px 0; }
+    .plan-day summary { cursor: pointer; font-weight: bold; font-size: 0.9rem; }
+    .plan-day ul { margin: 6px 0 2px; padding-left: 20px; font-size: 0.82rem; line-height: 1.7; }
+    .plan-bar { height: 8px; border-radius: 4px; background: var(--border); position: relative; overflow: hidden; margin: 4px 0 2px; }
+    .plan-bar > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+    .plan-bar > em { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text); opacity: 0.6; }
+    .plan-set { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
     .mode-card { border: 1px solid var(--border); border-radius: 12px; padding: 12px 10px; background: var(--card); color: var(--text); text-align: left; cursor: pointer; font: inherit; display: flex; flex-direction: column; gap: 4px; min-height: 84px; }
     .mode-card b { font-size: 0.95rem; }
@@ -751,6 +773,7 @@
     </details>
 
     </div><div class="col-r">
+    <button id="plan-banner" class="plan-banner" onclick="openPlan()"><div><b>📅 学習スケジュール</b><br><span>試験日までの計画を作ります</span></div><span>›</span></button>
     <div class="mode-grid">
       <button id="start-ai-btn" class="mode-card ai" onclick="startAIQuiz()"><b>✨ AI網羅特訓</b><span>5問ずつAIが予想問題を生成</span></button>
       <button id="start-mock-btn" class="mode-card mock" onclick="openMockSetup()"><b>🏆 腕試し</b><span>本番形式・時間制限</span></button>
@@ -1012,6 +1035,33 @@
     <button class="nav-btn secondary" onclick="goToStart()" style="margin-top: 12px;">設定画面に戻る</button>
   </div>
 
+  <div id="screen-plan" class="screen">
+    <h2>📅 学習スケジュール</h2>
+    <div class="plan-count" id="plan-count"></div>
+    <details class="fold" id="plan-settings">
+      <summary>⚙️ 計画の条件（試験日・受験科目・勉強時間）</summary>
+      <div class="fold-body">
+        <div class="plan-set">
+          <div class="filter-group"><label for="plan-exam">試験日</label><input type="date" id="plan-exam" class="filter-input" onchange="setPlanCfg()"></div>
+          <div class="filter-group"><label>受験する科目</label>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; font-size:0.9rem; padding-top:6px;">
+              <label><input type="checkbox" id="plan-sub-senmon" onchange="setPlanCfg()"> 専門</label>
+              <label><input type="checkbox" id="plan-sub-kiso" onchange="setPlanCfg()"> 基礎</label>
+              <label><input type="checkbox" id="plan-sub-tekisei" onchange="setPlanCfg()"> 適性</label>
+            </div></div>
+          <div class="filter-group"><label for="plan-weekday">平日の勉強時間</label><select id="plan-weekday" class="filter-select" onchange="setPlanCfg()"></select></div>
+          <div class="filter-group"><label for="plan-weekend">土日の勉強時間</label><select id="plan-weekend" class="filter-select" onchange="setPlanCfg()"></select></div>
+        </div>
+        <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.6; margin-top:6px;">計画は、あなたの正答状況（分野ごと）と、本試験での出題数をもとに毎日作り直します。今日の分は、一度作ったら日付が変わるまで固定します。</div>
+        <button class="nav-btn secondary" onclick="rebuildTodayPlan()" style="margin-top:10px;">今日の計画を作り直す</button>
+      </div>
+    </details>
+    <div class="plan-sec" id="plan-today"></div>
+    <div class="plan-sec" id="plan-status"></div>
+    <div class="plan-sec" id="plan-days"></div>
+    <button class="nav-btn secondary" onclick="goToStart()">スタート画面に戻る</button>
+  </div>
+
   <div id="screen-mistakes" class="screen">
     <h2>❌ 間違えた問題</h2>
     <div id="mis-subject-tabs" class="subject-tabs">
@@ -1212,10 +1262,28 @@
       scheduleNotionSync();
     }
   }
-  function bumpStats(isCorrect) {
+  function bumpStats(isCorrect, q) {
     const s = statsOf(currentSubject);
     s.total++;
     if (isCorrect) s.correct++;
+    if (q) logDaily(q, isCorrect);
+  }
+  // 端末の日付（日本時間など、その土地の日付）で YYYY-MM-DD
+  function localDate(t = Date.now()) {
+    const d = new Date(t);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  // 日ごとの解答数（学習スケジュールの進み具合の判定に使う）。分野ごとにも数える。60日分だけ残す
+  function logDaily(q, isCorrect) {
+    const k = localDate();
+    const all = userMemory.daily = userMemory.daily || {};
+    const e = all[k] = all[k] || { n: 0, c: 0, g: {} };
+    e.n++;
+    if (isCorrect) e.c++;
+    const gk = (q.subject || subjectOfId(q.id)) + '|' + (isAiQuestion(q) ? 'AI' : (q.genre || ''));
+    e.g[gk] = (e.g[gk] || 0) + 1;
+    const keys = Object.keys(all).sort();
+    while (keys.length > 60) delete all[keys.shift()];
   }
 
   // --- 年度・正答・表示のヘルパー ---
@@ -1616,6 +1684,7 @@
   }
 
   function updateMemoryUI() {
+    try { updatePlanBanner(); } catch (e) {}
     const s = statsOf(currentSubject);
     document.getElementById('ms-total').textContent = s.total;
     document.getElementById('ms-correct').textContent = s.correct;
@@ -2651,6 +2720,268 @@
   };
   window.addEventListener('online', () => scheduleNotionSync(1000));
 
+
+  // ===== 学習スケジュール: 試験日までの毎日の計画を、正答状況と本試験の出題数から作る =====
+  const PLAN_MOCK_MIN = { senmon: 120, kiso: 60, tekisei: 60 };   // 腕試しの試験時間（分）。見直しに30分を足す
+  const MIN_PER_Q = 2;                                              // 過去問1問あたり（解く＋解説を読む）の目安（分）
+  function planCfg() {
+    const p = userMemory.plan = userMemory.plan || {};
+    if (!p.examDate) p.examDate = '2026-11-22';
+    if (!p.subjects) p.subjects = { senmon: true, kiso: true, tekisei: true };
+    if (!p.weekday) p.weekday = 90;
+    if (!p.weekend) p.weekend = 240;
+    if (!p.done) p.done = {};
+    return p;
+  }
+  function addDays(ds, n) { const [y, m, d] = ds.split('-').map(Number); return localDate(new Date(y, m - 1, d + n)); }
+  function dayDiff(a, b) { const f = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).getTime(); }; return Math.round((f(b) - f(a)) / 864e5); }
+  const isWeekendDate = ds => { const [y, m, d] = ds.split('-').map(Number); const w = new Date(y, m - 1, d).getDay(); return w === 0 || w === 6; };
+  const WEEK_JA = ['日', '月', '火', '水', '木', '金', '土'];
+  const dayLabel = ds => { const [y, m, d] = ds.split('-').map(Number); return `${m}/${d}（${WEEK_JA[new Date(y, m - 1, d).getDay()]}）`; };
+  const fmtMin = m => m >= 60 ? `${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + '分' : ''}` : `${m}分`;
+
+  // 科目・分野ごとの到達度。「いま正解できる問題」の割合（最後に正解した問題）を、未回答も考慮してならす
+  async function planAnalysis() {
+    const cfg = planCfg();
+    const res = [];
+    for (const key of Object.keys(SUBJECTS)) {
+      if (!cfg.subjects[key]) continue;
+      let qs;
+      try { qs = (await loadSubjectQuestions(key)).filter(q => hasAnswerOf(q)); } catch (e) { continue; }
+      const years = Math.max(1, new Set(qs.map(q => q.year)).size);
+      const gmap = {};
+      qs.forEach(q => {
+        const g = q.genre || 'その他';
+        const G = gmap[g] = gmap[g] || { genre: g, total: 0, seen: 0, known: 0, wrong: 0 };
+        G.total++;
+        const h = userMemory.history[q.id];
+        if (h && (h.c || h.w)) { G.seen++; if (h.w > 0) G.wrong++; else if (h.c > 0) G.known++; }
+      });
+      const genres = Object.values(gmap).map(G => {
+        G.exam = Math.max(1, Math.round(G.total / years));                 // 本試験での1回あたりの出題数（目安）
+        G.mastery = (G.known + 0.5) / (G.seen + 1.5);                       // 解いた問題の正解率（少ないうちは50%寄り）
+        G.coverage = G.seen / G.total;
+        const c = 0.5 + 0.5 * G.coverage;
+        G.score = G.mastery * c + 0.35 * (1 - c);                           // 解いていない部分は、正答率35%程度とみなす（未回答が多いほど推定は低め）
+        return G;
+      });
+      const examTotal = genres.reduce((a, G) => a + G.exam, 0);
+      let rate = genres.reduce((a, G) => a + G.exam * G.score, 0) / Math.max(1, examTotal);
+      // 最近（14日以内）の腕試しの結果があれば、半分の重みで混ぜる
+      const recent = (userMemory.mockExams || []).filter(m => m.subject === key && m.score && Date.now() - (+String(m.id).replace(/\D/g, '') || 0) < 14 * 864e5);
+      const lastMock = recent.length ? recent[recent.length - 1].score.rate / 100 : null;
+      if (lastMock != null) rate = rate * 0.5 + lastMock * 0.5;
+      const openMis = Object.values(userMemory.mistakes || {}).filter(m => m.subject === key && !m.cleared).length;
+      res.push({ key, genres, rate, lastMock, openMis, seen: genres.reduce((a, G) => a + G.seen, 0), total: qs.length });
+    }
+    return res;
+  }
+
+  function mockDoneOn(subject, date) {
+    return (userMemory.mockExams || []).some(m => m.subject === subject && localDate(+String(m.id).replace(/\D/g, '') || 0) === date);
+  }
+
+  // 計画を作る。today〜試験日の前日までの各日に、作業（tasks）を割り当てる
+  function buildPlan(an, cfg, today) {
+    const left = dayDiff(today, cfg.examDate);
+    const days = [];
+    for (let i = 0; i < left; i++) {
+      const date = addDays(today, i);
+      const budget = isWeekendDate(date) ? cfg.weekend : cfg.weekday;
+      days.push({ date, budget, left: budget, tasks: [] });
+    }
+    if (!days.length) return days;
+    const add = (day, t) => { t.id = `${day.date}|${t.kind}|${t.subject || ''}|${t.genre || ''}`; day.tasks.push(t); day.left -= t.minutes; };
+    const last = days[days.length - 1];
+    const subjects = an.slice().sort((a, b) => a.rate - b.rate);   // 推定の低い科目から
+
+    // 1) 前日: 間違えた問題の総復習と、まとめノートの見直し（軽め）
+    if (days.length >= 2) {
+      const half = Math.max(30, Math.round(last.budget / 2 / 10) * 10);
+      add(last, { kind: 'mistakes', subject: '', minutes: half, title: '間違えた問題の総仕上げ（全科目）', note: '新しい問題より、間違えた問題・ブックマークを確実に' });
+      add(last, { kind: 'notes', subject: subjects[0] ? subjects[0].key : 'senmon', minutes: Math.max(20, last.budget - half), title: 'まとめノート・学習ガイドで直前チェック', note: '数値・法令・用語を見直し、早めに寝る' });
+    }
+    // 2) 腕試し: 最後の1週間に各科目1回。日数に余裕があり、最近の腕試しがない科目は、最初の数日に実力確認として1回
+    // 時間が足りる日（多くは土日）を優先。期間内に無ければ前後に広げ、それでも無ければ一番長く取れる日に置く
+    const placeMock = (sub, from, to, why) => {
+      const need = PLAN_MOCK_MIN[sub.key] + 30;
+      const free = d => d !== last && !d.tasks.some(t => t.kind === 'mock');
+      const inRange = days.slice(Math.max(0, from), Math.max(0, to) + 1).filter(free);
+      let fit = inRange.filter(d => d.left >= need);
+      if (!fit.length) fit = days.slice(Math.max(0, from - 3), Math.max(0, to) + 1).filter(d => free(d) && d.left >= need);
+      const pickFrom = fit.length ? fit : (inRange.length ? inRange : days.filter(free));
+      if (!pickFrom.length) return;
+      const day = pickFrom.reduce((a, b) => (b.left > a.left ? b : a));
+      add(day, { kind: 'mock', subject: sub.key, minutes: need, title: `${SUBJECTS[sub.key].short}科目の腕試し（本番形式・${PLAN_MOCK_MIN[sub.key]}分）＋見直し`, note: why + (day.left < 0 ? '　※この日は時間を多めに確保してください' : '') });
+    };
+    const n = days.length;
+    const bySize = subjects.slice().sort((a, b) => PLAN_MOCK_MIN[b.key] - PLAN_MOCK_MIN[a.key]);   // 長い試験から、時間の取れる日を確保
+    // 本番前の1週間に各科目1回
+    bySize.forEach(sub => placeMock(sub, n - 7, n - 2, '本番の時間配分に慣れる'));
+    // 日数に余裕があり、最近（14日以内）腕試しをしていない科目は、前半に実力確認として1回
+    if (n >= 9) bySize.forEach(sub => { if (sub.lastMock == null) placeMock(sub, 0, n - 8, '今の実力を確かめ、弱点を見つける'); });
+
+    // 3) 間違えた問題の復習: 毎日15分（未克服がある科目）
+    days.forEach(d => {
+      if (d === last) return;
+      const sub = subjects.filter(x => x.openMis > 0).sort((a, b) => b.openMis - a.openMis)[0];
+      if (sub && d.left >= 30) add(d, { kind: 'mistakes', subject: sub.key, minutes: 15, title: `${SUBJECTS[sub.key].short}：間違えた問題の復習`, note: `未克服 ${sub.openMis}問。2回連続正解で克服` });
+    });
+
+    // 4) 残りの時間: 弱い分野の過去問演習を30分単位で配る（出題数が多く、到達度が低い分野ほど多く）
+    const target = 0.65;   // 合格ライン50%に余裕を持たせた目標
+    const pool = [];
+    subjects.forEach(sub => sub.genres.forEach(G => {
+      const subW = 1 + Math.max(0, target - sub.rate) * 3;
+      pool.push({ sub, G, w: G.exam * (1 - G.score) * subW * (1 + 0.5 * (1 - G.coverage)), alloc: 0, cap: Math.ceil((G.total - G.known) * MIN_PER_Q / 30) + 1 });
+    }));
+    days.forEach(d => {
+      if (d === last) return;
+      let guard = 0;
+      while (d.left >= 20 && guard++ < 20) {
+        const usedToday = g => d.tasks.filter(t => t.kind === 'practice' && t.subject === g.sub.key && t.genre === g.G.genre).reduce((a, t) => a + t.minutes, 0);
+        const cand = pool.filter(g => g.alloc < g.cap && usedToday(g) < 60);
+        if (!cand.length) break;
+        const g = cand.reduce((a, b) => (b.w / (1 + b.alloc * 0.7) > a.w / (1 + a.alloc * 0.7) ? b : a));
+        const m = Math.min(30, d.left);
+        const ex = d.tasks.find(t => t.kind === 'practice' && t.subject === g.sub.key && t.genre === g.G.genre);
+        if (ex) { ex.minutes += m; ex.n = Math.round(ex.minutes / MIN_PER_Q); d.left -= m; }
+        else add(d, { kind: 'practice', subject: g.sub.key, genre: g.G.genre, minutes: m, n: Math.round(m / MIN_PER_Q), title: `${SUBJECTS[g.sub.key].short}：${g.G.genre}`, note: `到達度 ${Math.round(g.G.score * 100)}%・本試験で約${g.G.exam}問` });
+        g.alloc++;
+      }
+    });
+    days.forEach(d => d.tasks.forEach(t => { if (t.kind === 'practice') t.note = `${t.n}問（間違えた・未回答の問題から）・${t.note}`; }));
+    return days;
+  }
+
+  // 作業の進み具合（自動判定）。過去問演習: 今日その分野で解いた数。腕試し: 今日その科目を受けたか
+  function taskProgress(t, date) {
+    const cfg = planCfg();
+    if (cfg.done[t.id]) return { done: true, text: '完了' };
+    if (t.kind === 'practice') {
+      const e = (userMemory.daily || {})[date];
+      const n = e ? (e.g[`${t.subject}|${t.genre}`] || 0) : 0;
+      return { done: n >= t.n, text: `${Math.min(n, t.n)}/${t.n}問` };
+    }
+    if (t.kind === 'mock') return { done: mockDoneOn(t.subject, date), text: mockDoneOn(t.subject, date) ? '受験済み' : '' };
+    return { done: false, text: '' };
+  }
+
+  let planCache = null;   // { today, an, days }
+  async function computePlan() {
+    const cfg = planCfg();
+    const today = localDate();
+    const an = await planAnalysis();
+    const days = buildPlan(an, cfg, today);
+    // 今日の分は、一度作ったら日付が変わるまで固定する（解くたびに今日の内容が変わらないように）
+    if (days.length) {
+      if (cfg.frozen && cfg.frozen.date === today && cfg.frozen.key === planCfgKey(cfg)) days[0].tasks = cfg.frozen.tasks;
+      else { cfg.frozen = { date: today, key: planCfgKey(cfg), tasks: days[0].tasks }; saveUserData(); }
+    }
+    planCache = { today, an, days };
+    return planCache;
+  }
+  const planCfgKey = c => [c.examDate, Object.keys(c.subjects).filter(k => c.subjects[k]).join(','), c.weekday, c.weekend].join('|');
+
+  window.openPlan = async function() {
+    switchScreen('screen-plan');
+    window.scrollTo(0, 0);
+    const cfg = planCfg();
+    const opts = [30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 480];
+    ['weekday', 'weekend'].forEach(k => {
+      const sel = document.getElementById('plan-' + k);
+      sel.innerHTML = opts.map(m => `<option value="${m}"${m === cfg[k] ? ' selected' : ''}>${fmtMin(m)}</option>`).join('');
+    });
+    document.getElementById('plan-exam').value = cfg.examDate;
+    Object.keys(SUBJECTS).forEach(k => { document.getElementById('plan-sub-' + k).checked = !!cfg.subjects[k]; });
+    document.getElementById('plan-today').innerHTML = '<div style="color:var(--text-muted);">計画を作成中…</div>';
+    await renderPlan();
+  };
+  window.setPlanCfg = function() {
+    const cfg = planCfg();
+    cfg.examDate = document.getElementById('plan-exam').value || cfg.examDate;
+    Object.keys(SUBJECTS).forEach(k => { cfg.subjects[k] = document.getElementById('plan-sub-' + k).checked; });
+    cfg.weekday = +document.getElementById('plan-weekday').value;
+    cfg.weekend = +document.getElementById('plan-weekend').value;
+    saveUserData();
+    renderPlan();
+  };
+  window.rebuildTodayPlan = function() { planCfg().frozen = null; saveUserData(); renderPlan(); };
+  window.togglePlanTask = function(id, on) { const cfg = planCfg(); if (on) cfg.done[id] = 1; else delete cfg.done[id]; saveUserData(); renderPlan(); };
+
+  async function renderPlan() {
+    const cfg = planCfg();
+    const { today, an, days } = await computePlan();
+    const left = dayDiff(today, cfg.examDate);
+    document.getElementById('plan-count').innerHTML = left > 0 ? `試験日（${dayLabel(cfg.examDate)}）まで<b>あと${left}日</b>今日を入れて${left}日、勉強できます`
+      : left === 0 ? '<b>今日は試験日です</b>落ち着いて、いつも通りに。受験票・写真付き身分証・筆記用具・電卓（関数電卓不可）を忘れずに' : '<b>試験日を過ぎています</b>計画の条件で、次の試験日を設定してください';
+
+    // 今日
+    const td = days[0];
+    const box = document.getElementById('plan-today');
+    if (!td) box.innerHTML = '<h3>今日のメニュー</h3><div style="color:var(--text-muted);">計画はありません</div>';
+    else {
+      const st = td.tasks.map(t => ({ t, p: taskProgress(t, today) }));
+      const doneN = st.filter(x => x.p.done).length;
+      const e = (userMemory.daily || {})[today];
+      box.innerHTML = `<h3>今日のメニュー（${dayLabel(today)}・${fmtMin(td.budget)}）　${doneN}/${st.length} 完了</h3>
+        <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">今日解いた問題: ${e ? `${e.n}問（正解 ${e.c}問）` : 'まだありません'}</div>` +
+        st.map(({ t, p }) => `<div class="plan-task${p.done ? ' done' : ''}">
+          <input type="checkbox" ${p.done ? 'checked' : ''} onchange="togglePlanTask('${escapeHtml(t.id).replace(/'/g, '&#39;')}', this.checked)" aria-label="完了">
+          <div class="pt-body"><div class="pt-title">${escapeHtml(t.title)}</div><div class="pt-sub">${fmtMin(t.minutes)}・${escapeHtml(t.note || '')}${p.text ? `　<b>${escapeHtml(p.text)}</b>` : ''}</div></div>
+          ${p.done ? '' : `<button onclick="startPlanTask(${td.tasks.indexOf(t)})">始める</button>`}
+        </div>`).join('');
+    }
+
+    // 到達度
+    const sb = document.getElementById('plan-status');
+    sb.innerHTML = '<h3>科目ごとの到達度（推定）</h3>' + (an.length ? an.map(a => {
+      const pctv = Math.round(a.rate * 100), color = pctv >= 65 ? '#22c55e' : pctv >= 50 ? '#eab308' : '#ef4444';
+      const weak = a.genres.slice().sort((x, y) => (y.exam * (1 - y.score)) - (x.exam * (1 - x.score))).slice(0, 3).map(G => `${escapeHtml(G.genre)}（${Math.round(G.score * 100)}%）`).join('、');
+      return `<div style="margin:8px 0 10px;"><div style="display:flex; justify-content:space-between; font-size:0.88rem;"><b>${SUBJECTS[a.key].label}</b><span>${pctv}%${a.lastMock != null ? `（直近の腕試し ${Math.round(a.lastMock * 100)}%）` : ''}</span></div>
+        <div class="plan-bar"><i style="width:${pctv}%; background:${color};"></i><em style="left:50%;"></em><em style="left:65%; opacity:0.3;"></em></div>
+        <div style="font-size:0.76rem; color:var(--text-muted); line-height:1.5;">解いた問題 ${a.seen}/${a.total}・未克服の間違い ${a.openMis}問<br>優先する分野: ${weak}</div></div>`;
+    }).join('') + '<div style="font-size:0.74rem; color:var(--text-muted);">縦線は合格ライン50%（薄い線は目標65%）。分野ごとの「最後に解いたとき正解した割合」と、解いた量・直近の腕試しから推定しています。</div>'
+      : '<div style="color:var(--text-muted);">受験する科目を選んでください</div>');
+
+    // これからの予定
+    const db = document.getElementById('plan-days');
+    db.innerHTML = '<h3>これからの予定</h3>' + (days.length > 1 ? days.slice(1).map(d =>
+      `<details class="plan-day"><summary>${dayLabel(d.date)}　${fmtMin(d.tasks.reduce((a, t) => a + t.minutes, 0))}${d.tasks.some(t => t.kind === 'mock') ? '　🏆腕試し' : ''}${d === days[days.length - 1] ? '　📝前日' : ''}</summary><ul>${d.tasks.map(t => `<li>${escapeHtml(t.title)}（${fmtMin(t.minutes)}）</li>`).join('')}</ul></details>`).join('')
+      + `<div class="plan-day"><b>${dayLabel(cfg.examDate)}　🎯 試験当日</b></div>` : '<div style="color:var(--text-muted);">（今日が最後の勉強日です）</div>');
+    updatePlanBanner();
+  }
+
+  // 作業を始める。科目が違えば切り替えてから
+  window.startPlanTask = async function(i) {
+    const t = planCache && planCache.days[0] && planCache.days[0].tasks[i];
+    if (!t) return;
+    if (t.subject && t.subject !== currentSubject) await selectSubject(t.subject);
+    if (t.kind === 'practice') {
+      const pool = allQuestions.filter(q => (q.genre || 'その他') === t.genre && hasAnswerOf(q));
+      const rank = q => { const h = userMemory.history[q.id]; return !h || (!h.c && !h.w) ? 1 : h.w > 0 ? 0 : h.c === 1 ? 2 : 3; };
+      const list = shuffleArray(pool.slice()).sort((a, b) => rank(a) - rank(b)).slice(0, t.n);
+      if (!list.length) { showToast('この分野の問題がありません'); return; }
+      startQuizWith(list);
+    } else if (t.kind === 'mock') openMockSetup();
+    else if (t.kind === 'mistakes') openMistakes(t.subject || currentSubject);
+    else if (t.kind === 'notes') window.open(SUBJECTS[t.subject] && SUBJECTS[t.subject].hasNotes ? 'viewer.html' : `viewer.html?subject=${t.subject}`, '_blank');
+  };
+
+  // スタート画面の「学習スケジュール」の表示（あと何日・今日の完了数）
+  function updatePlanBanner() {
+    const el = document.getElementById('plan-banner');
+    if (!el) return;
+    const cfg = planCfg();
+    const today = localDate();
+    const left = dayDiff(today, cfg.examDate);
+    let sub = '試験日までの毎日の計画を見る';
+    if (cfg.frozen && cfg.frozen.date === today) {
+      const ts = cfg.frozen.tasks;
+      sub = `今日のメニュー ${ts.filter(t => taskProgress(t, today).done).length}/${ts.length} 完了`;
+    }
+    el.innerHTML = `<div><b>📅 ${left > 0 ? `試験まであと${left}日` : left === 0 ? '今日は試験日' : '学習スケジュール'}</b><br><span>${sub}</span></div><span>›</span>`;
+  }
 
   // --- 間違えた問題リスト ---
   let misSubject = 'senmon', misFilter = 'open', misQuery = '';
@@ -4874,7 +5205,7 @@ ${AI_JSON_FORMAT}
     if (isCorrect) { userMemory.history[q.id].c++; userMemory.history[q.id].w = 0; }
     else userMemory.history[q.id].w++;
     recordMistake(q, isCorrect, selectedIdx);
-    bumpStats(isCorrect);
+    bumpStats(isCorrect, q);
   }
 
   window.submitMockExam = function(force = false) {
@@ -5521,7 +5852,7 @@ ${AI_JSON_FORMAT}`;
       }
       
       recordMistake(q, isCorrect, selectedIdx);
-      bumpStats(isCorrect);
+      bumpStats(isCorrect, q);
       // ブックマークした問題の復習状況を自動で更新（間違い→復習中、2回連続正解→克服済み）
       const bm = userMemory.bookmarks && userMemory.bookmarks[q.id];
       if (bm) {
