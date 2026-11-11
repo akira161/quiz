@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>学習動画 | 技術士一次試験 過去問演習</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#4338ca">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <style>
+    :root { --primary:#4338ca; --bg:#f8fafc; --card:#fff; --text:#0f172a; --muted:#64748b; --border:#e2e8f0; --radius:12px; }
+    [data-theme="dark"] { --primary:#818cf8; --bg:#0f172a; --card:#1e293b; --text:#f1f5f9; --muted:#94a3b8; --border:#334155; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 12px; display: flex; justify-content: center; }
+    .container { width: 100%; max-width: 980px; background: var(--card); padding: 20px 16px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+    h1 { font-size: 1.3rem; margin: 0 0 6px; color: var(--primary); }
+    .lead { font-size: .85rem; color: var(--muted); line-height: 1.6; margin: 0 0 14px; }
+    .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .top a { color: var(--primary); font-size: .85rem; font-weight: bold; text-decoration: none; }
+    .tabs { display: flex; gap: 6px; background: var(--bg); border: 1px solid var(--border); padding: 4px; border-radius: 10px; margin-bottom: 12px; }
+    .tab { flex: 1; padding: 10px 4px; border: none; background: transparent; color: var(--muted); font-weight: bold; font-size: .95rem; border-radius: 8px; cursor: pointer; }
+    .tab.active { background: var(--card); color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+    .player { position: sticky; top: 0; z-index: 2; background: var(--card); padding-bottom: 10px; display: none; }
+    .player.show { display: block; }
+    video { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; display: block; }
+    .ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: .85rem; }
+    .ctrl b { flex: 1 1 100%; font-size: .95rem; }
+    .ctrl button { border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: .8rem; cursor: pointer; }
+    .ctrl button.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    @media (min-width: 700px) { .grid { grid-template-columns: 1fr 1fr; } }
+    .item { text-align: left; border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: var(--radius); padding: 12px 14px; cursor: pointer; font: inherit; display: flex; flex-direction: column; gap: 4px; }
+    .item.playing { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary) inset; }
+    .item .k { font-size: .75rem; font-weight: bold; color: var(--primary); }
+    .item .t { font-weight: bold; font-size: .95rem; }
+    .item .d { font-size: .8rem; color: var(--muted); line-height: 1.5; }
+    .item .m { font-size: .75rem; color: var(--muted); }
+    .item .done { color: #16a34a; font-weight: bold; }
+    .note { font-size: .78rem; color: var(--muted); line-height: 1.6; margin-top: 14px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="top"><h1>🎬 学習動画</h1><a href="index.html">← アプリに戻る</a></div>
+  <p class="lead">過去問のデータベースから作った、スキマ時間用の動画です（音声なし・文字で進みます）。<b>○×一問一答</b>は記述を見て6秒で○×を考え、<b>頻出論点ランキング</b>は出題の多い論点と覚えておきたい記述を、<b>ひっかけ注意集</b>は誤りとされた記述と正しい記述を見比べます。</p>
+  <div class="tabs" id="tabs">
+    <button class="tab" data-s="senmon">専門</button>
+    <button class="tab" data-s="kiso">基礎</button>
+    <button class="tab" data-s="tekisei">適性</button>
+  </div>
+  <div class="player" id="player">
+    <video id="video" controls playsinline preload="metadata"></video>
+    <div class="ctrl" id="ctrl"><b id="now"></b><span>速さ:</span></div>
+  </div>
+  <div class="grid" id="list"></div>
+  <p class="note">記述は過去問の出題時点のものです。法改正・最新の数値は、まとめノートの「最新動向」も確認してください。動画は通信して再生します（オフラインでは見られません）。</p>
+</div>
+<script>
+let mem = {};
+try { mem = JSON.parse(localStorage.getItem('app_memory') || '{}'); } catch (e) {}
+if (mem.theme === 'dark') document.body.setAttribute('data-theme', 'dark');
+const KIND = { rank: '📊 頻出論点ランキング', ox: '⭕ ○×一問一答', trap: '⚠️ ひっかけ注意集' };
+const loadJson = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || '') || d; } catch (e) { return d; } };
+const watched = loadJson('video_watched', {});
+let items = [], subject = new URLSearchParams(location.search).get('subject') || mem.subject || 'senmon', rate = loadJson('video_rate', 1);
+const video = document.getElementById('video');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const mmss = s => `${Math.floor(s / 60)}分${s % 60 ? (s % 60) + '秒' : ''}`;
+
+// 速さの切り替え（文字を読む速さに合わせる）
+[0.75, 1, 1.25, 1.5, 2].forEach(r => {
+  const b = document.createElement('button');
+  b.textContent = r + '倍'; b.dataset.r = r;
+  b.onclick = () => { rate = r; video.playbackRate = r; try { localStorage.setItem('video_rate', JSON.stringify(r)); } catch (e) {} paintRate(); };
+  document.getElementById('ctrl').appendChild(b);
+});
+function paintRate() { document.querySelectorAll('#ctrl button').forEach(b => b.classList.toggle('on', +b.dataset.r === rate)); }
+video.addEventListener('loadedmetadata', () => { video.playbackRate = rate; });
+video.addEventListener('ended', () => {
+  const id = video.dataset.id;
+  watched[id] = Date.now();
+  try { localStorage.setItem('video_watched', JSON.stringify(watched)); } catch (e) {}
+  render();
+});
+
+function render() {
+  document.querySelectorAll('#tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.s === subject));
+  const list = items.filter(m => m.subject === subject);
+  document.getElementById('list').innerHTML = list.map(m => `<button class="item${video.dataset.id === m.id ? ' playing' : ''}" data-id="${esc(m.id)}">
+      <span class="k">${KIND[m.kind] || ''}</span>
+      <span class="t">${esc(m.kind === 'ox' ? m.label : m.title)}</span>
+      <span class="d">${esc(m.desc)}</span>
+      <span class="m">${mmss(m.sec)}・${(m.size / 1048576).toFixed(1)}MB${watched[m.id] ? '　<span class="done">✓ 見た</span>' : ''}</span>
+    </button>`).join('') || '<p class="lead">この科目の動画はまだありません。</p>';
+  document.querySelectorAll('#list .item').forEach(el => el.onclick = () => play(el.dataset.id));
+}
+function play(id) {
+  const m = items.find(x => x.id === id);
+  if (!m) return;
+  video.dataset.id = id;
+  video.src = m.file;
+  document.getElementById('now').textContent = `${m.kind === 'ox' ? '⭕ ○×一問一答　' + m.label : (m.kind === 'trap' ? '⚠️ ' : '📊 ') + m.title}（${{ senmon: '専門', kiso: '基礎', tekisei: '適性' }[m.subject]}）`;
+  document.getElementById('player').classList.add('show');
+  paintRate();
+  video.play().catch(() => {});
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  render();
+}
+document.querySelectorAll('#tabs .tab').forEach(t => t.onclick = () => { subject = t.dataset.s; render(); });
+fetch('videos/videos.json', { cache: 'no-cache' }).then(r => r.json()).then(j => { items = j; render(); })
+  .catch(() => { document.getElementById('list').innerHTML = '<p class="lead">動画の一覧を読み込めませんでした。通信状況を確認してください。</p>'; });
+</script>
+</body>
+</html>

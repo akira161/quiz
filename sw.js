@@ -4,7 +4,7 @@
 // - CDNのライブラリ: 保存分を優先（バージョン固定のため）
 // - Gemini API: 保存しない（常に通信）
 // 先に保存する一覧は tools/build_db.py が precache.json に書き出す。CACHE_NAME は tools/stamp_sw.py がファイルの中身から自動で決める
-const CACHE_NAME = 'quiz-cache-ddefb063af';
+const CACHE_NAME = 'quiz-cache-c1ed7f11f2';
 const NETWORK_TIMEOUT_MS = 4000;
 
 // 先に保存するファイル（アプリ本体・科目DB・まとめノート・図が必要な問題の画像）の一覧は precache.json にある
@@ -89,6 +89,8 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin === self.location.origin) {
+    // 学習動画は大きく、途中から読む（Range）要求になるので、保存せずブラウザに任せる
+    if (url.pathname.includes('/videos/') && url.pathname.endsWith('.mp4')) return;
     // 問題画像は問題IDごとに固定なので、保存分を優先する（データを作り直すと CACHE_NAME が変わり、入れ替わる）
     event.respondWith(url.pathname.includes('/figures/') ? cacheFirst(request) : networkFirst(request));
   } else if (CDN_HOSTS.includes(url.hostname)) {

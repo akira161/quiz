@@ -6,6 +6,7 @@
 - `js/core.js` … 画面に依存しない処理（正答の判定・数式の整形・日付・学習スケジュールの計画づくり・間隔をあけた復習・文章の似かた・AIの応答の読み取り）
 - `tests/` … `js/core.js` の自動テスト
 - `viewer.html` … 衛生工学のまとめノート（`matome.xlsx` を表示）
+- `videos.html` / `videos/` … 学習動画（○×一問一答・頻出論点ランキング・ひっかけ注意集）
 - `data/` … 科目ごとの問題データ（`senmon.xlsx` / `kiso.xlsx` / `tekisei.xlsx`）
 - `figures/<科目>/<ID>.png` … 問題の原本画像（図・表が必要な問題の確認用）
 - `sw.js` / `manifest.webmanifest` / `precache.json` … オフライン対応・ホーム画面への追加
@@ -42,3 +43,11 @@ git config core.hooksPath .githooks   # 一度だけ: コミット前に上の2�
 ```
 
 GitHub に送ると `.github/workflows/test.yml` が同じテストと、`CACHE_NAME` が最新かを確かめます。
+
+## 学習動画（videos/）
+
+`guide.json`（過去問から取り出した「正しい記述」「誤りの記述」）から作る。`guide.json` を作り直したら、次で動画と一覧（`videos/videos.json`）を作り直す（音声なし。必要なもの: pillow・ffmpeg・日本語フォント）。
+
+```
+python3 tools/build_videos.py
+```

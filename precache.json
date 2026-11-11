@@ -4,6 +4,8 @@
 "js/core.js",
 "viewer.html",
 "guide.json",
+"videos/videos.json",
+"videos.html",
 "guide.html",
 "manifest.webmanifest",
 "matome.xlsx",

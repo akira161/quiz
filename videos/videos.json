@@ -1,0 +1,178 @@
+[
+ {
+  "id": "rank_senmon",
+  "kind": "rank",
+  "subject": "senmon",
+  "title": "頻出論点ランキング TOP10",
+  "label": "",
+  "desc": "出題の多い論点トップ10と、そこで正しいとされた記述",
+  "sec": 198,
+  "file": "videos/rank_senmon.mp4",
+  "size": 841469
+ },
+ {
+  "id": "ox_senmon_1",
+  "kind": "ox",
+  "subject": "senmon",
+  "title": "○×一問一答 建築環境・設備・建築物衛生管理",
+  "label": "建築環境・設備・建築物衛生管理",
+  "desc": "24問。記述を見て6秒で○×を考え、答えと出典を確認",
+  "sec": 248,
+  "file": "videos/ox_senmon_1.mp4",
+  "size": 1638918
+ },
+ {
+  "id": "ox_senmon_2",
+  "kind": "ox",
+  "subject": "senmon",
+  "title": "○×一問一答 廃棄物管理",
+  "label": "廃棄物管理",
+  "desc": "24問。記述を見て6秒で○×を考え、答えと出典を確認",
+  "sec": 248,
+  "file": "videos/ox_senmon_2.mp4",
+  "size": 1905405
+ },
+ {
+  "id": "ox_senmon_3",
+  "kind": "ox",
+  "subject": "senmon",
+  "title": "○×一問一答 水質管理",
+  "label": "水質管理",
+  "desc": "24問。記述を見て6秒で○×を考え、答えと出典を確認",
+  "sec": 248,
+  "file": "videos/ox_senmon_3.mp4",
+  "size": 1496738
+ },
+ {
+  "id": "trap_senmon",
+  "kind": "trap",
+  "subject": "senmon",
+  "title": "ひっかけ注意集",
+  "label": "",
+  "desc": "15論点。誤りとされた記述と、同じ論点の正しい記述を見比べる",
+  "sec": 218,
+  "file": "videos/trap_senmon.mp4",
+  "size": 1287767
+ },
+ {
+  "id": "rank_kiso",
+  "kind": "rank",
+  "subject": "kiso",
+  "title": "頻出論点ランキング TOP10",
+  "label": "",
+  "desc": "出題の多い論点トップ10と、そこで正しいとされた記述",
+  "sec": 142,
+  "file": "videos/rank_kiso.mp4",
+  "size": 475859
+ },
+ {
+  "id": "ox_kiso_1",
+  "kind": "ox",
+  "subject": "kiso",
+  "title": "○×一問一答 情報・論理",
+  "label": "情報・論理",
+  "desc": "24問。記述を見て6秒で○×を考え、答えと出典を確認",
+  "sec": 248,
+  "file": "videos/ox_kiso_1.mp4",
+  "size": 1873206
+ },
+ {
+  "id": "ox_kiso_2",
+  "kind": "ox",
+  "subject": "kiso",
+  "title": "○×一問一答 解析",
+  "label": "解析",
+  "desc": "24問。記述を見て6秒で○×を考え、答えと出典を確認",
+  "sec": 248,
+  "file": "videos/ox_kiso_2.mp4",
+  "size": 1062181
+ },
+ {
+  "id": "ox_kiso_3",
+  "kind": "ox",
+  "subject": "kiso",
+  "title": "○×一問一答 材料・化学・バイオ",
+  "label": "材料・化学・バイオ",
+  "desc": "24問。記述を見て6秒で○×を考え、答えと出典を確認",
+  "sec": 248,
+  "file": "videos/ox_kiso_3.mp4",
+  "size": 1443322
+ },
+ {
+  "id": "ox_kiso_4",
+  "kind": "ox",
+  "subject": "kiso",
+  "title": "○×一問一答 環境・エネルギー・技術",
+  "label": "環境・エネルギー・技術",
+  "desc": "24問。記述を見て6秒で○×を考え、答えと出典を確認",
+  "sec": 248,
+  "file": "videos/ox_kiso_4.mp4",
+  "size": 1940642
+ },
+ {
+  "id": "ox_kiso_5",
+  "kind": "ox",
+  "subject": "kiso",
+  "title": "○×一問一答 設計・計画",
+  "label": "設計・計画",
+  "desc": "19問。記述を見て6秒で○×を考え、答えと出典を確認",
+  "sec": 198,
+  "file": "videos/ox_kiso_5.mp4",
+  "size": 1258078
+ },
+ {
+  "id": "trap_kiso",
+  "kind": "trap",
+  "subject": "kiso",
+  "title": "ひっかけ注意集",
+  "label": "",
+  "desc": "15論点。誤りとされた記述と、同じ論点の正しい記述を見比べる",
+  "sec": 218,
+  "file": "videos/trap_kiso.mp4",
+  "size": 1052722
+ },
+ {
+  "id": "rank_tekisei",
+  "kind": "rank",
+  "subject": "tekisei",
+  "title": "頻出論点ランキング TOP10",
+  "label": "",
+  "desc": "出題の多い論点トップ10と、そこで正しいとされた記述",
+  "sec": 163,
+  "file": "videos/rank_tekisei.mp4",
+  "size": 847367
+ },
+ {
+  "id": "ox_tekisei_1",
+  "kind": "ox",
+  "subject": "tekisei",
+  "title": "○×一問一答 法令・制度・社会・環境・技術者倫理",
+  "label": "法令・制度・社会・環境・技術者倫理",
+  "desc": "24問。記述を見て6秒で○×を考え、答えと出典を確認",
+  "sec": 248,
+  "file": "videos/ox_tekisei_1.mp4",
+  "size": 2198061
+ },
+ {
+  "id": "ox_tekisei_2",
+  "kind": "ox",
+  "subject": "tekisei",
+  "title": "○×一問一答 技術士法・倫理綱領・安全・リスク",
+  "label": "技術士法・倫理綱領・安全・リスク",
+  "desc": "24問。記述を見て6秒で○×を考え、答えと出典を確認",
+  "sec": 248,
+  "file": "videos/ox_tekisei_2.mp4",
+  "size": 2133874
+ },
+ {
+  "id": "trap_tekisei",
+  "kind": "trap",
+  "subject": "tekisei",
+  "title": "ひっかけ注意集",
+  "label": "",
+  "desc": "15論点。誤りとされた記述と、同じ論点の正しい記述を見比べる",
+  "sec": 218,
+  "file": "videos/trap_tekisei.mp4",
+  "size": 1554845
+ }
+]
